@@ -1,0 +1,47 @@
+name: ROADLINE Android APK
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - name: Unpack ROADLINE sources
+        run: |
+          test -f Roadline_Unity_Stage06.zip || { echo "::error::Upload Roadline_Unity_Stage06.zip to the repository root first"; exit 1; }
+          unzip -q Roadline_Unity_Stage06.zip
+          test -f Roadline_Stage06/ProjectSettings/ProjectVersion.txt
+      - name: Check Unity license
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        run: |
+          test -n "$UNITY_LICENSE" && test -n "$UNITY_EMAIL" && test -n "$UNITY_PASSWORD" || { echo "::error::Unity Personal license secrets are missing"; exit 1; }
+      - name: Build Android APK
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: Roadline_Stage06
+          unityVersion: 6000.0.60f1
+          targetPlatform: Android
+          buildMethod: Roadline.Editor.RoadlineBuild.BuildAndroid
+          allowDirtyBuild: true
+          versioning: None
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ROADLINE-Android-Alpha
+          path: |
+            Roadline_Stage06/Builds/Roadline.apk
+            Builds/Roadline.apk
+          if-no-files-found: error
+          retention-days: 7
