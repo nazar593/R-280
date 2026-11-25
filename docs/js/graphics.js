@@ -146,10 +146,14 @@ leaf.onBeforeCompile=sh=>{sh.uniforms.windTime=windTime;sh.vertexShader='uniform
  `);};
 const trunkGeo=new T.CylinderGeometry(.12,.25,3.4,7,2);const crownGeo=new T.IcosahedronGeometry(1,1),farCrownGeo=new T.IcosahedronGeometry(1,0);
 const vegetation=[];
+// Approximate scenery bounds for arcade collision feedback.
+const scenery=[];
 for(let c=0;c<12;c++){
  const cz=-550+c*100,trs=[],near=[],far=[],blades=[],bushes=[];
  for(let j=0;j<18;j++){const x=(j%2?1:-1)*(12+rand()*48),z=cz+(rand()-.5)*95,h=.8+rand()*.9,y=terrainHeight(x,z);
  trs.push([x,y+1.7*h,z,h,h,h,0,rand()*6,0,0xc8bba4]);
+ scenery.push([x,y+1.7*h,z,.25*h,1.7*h,.25*h]);
+ scenery.push([x,y+4*h,z,1.8*h,2.2*h,1.8*h]);
  const color=[0x84945d,0x748c51,0x94a36c,0x627b4a][j%4];
  for(let k=0;k<4;k++)near.push([x+(rand()-.5)*1.8*h,y+(2.9+k*.61)*h,z+(rand()-.5)*1.8*h,(1.4+rand()*.5)*h,(1.35+rand()*.4)*h,(1.4+rand()*.4)*h,0,rand()*6,0,color]);
  far.push([x,y+4*h,z,2.2*h,2.6*h,2.2*h,0,rand()*6,0,color]);
@@ -162,20 +166,21 @@ for(let c=0;c<12;c++){
 }
 const stoneMat=mat(0xaaa49a,{map:tex.rock});let stones=[];
 for(let j=0;j<90;j++){let x=(j%2?1:-1)*(7+rand()*25),z=rand()*1100-550,k=.16+rand()*.55;stones.push([x,terrainHeight(x,z)+k*.2,z,k,k*.57,k*.8,0,rand()*6,0,0xaaa99e]);}
-instance(farCrownGeo,stoneMat,stones);
+instance(farCrownGeo,stoneMat,stones);for(const q of stones)scenery.push([q[0],q[1],q[2],q[3],q[4],q[5]]);
 const wallMat=mat(0xc1b8a3,{map:tex.soil}),roofMat=mat(0xb9a79b,{map:tex.roof,metalness:.15}),trim=mat(0x64685c);
 function gable(w,h,d){const sh=new T.Shape();sh.moveTo(-w/2,0);sh.lineTo(0,h);sh.lineTo(w/2,0);sh.closePath();const g=new T.ExtrudeGeometry(sh,{depth:d,bevelEnabled:false});g.translate(0,0,-d/2);return g;}
 for(let j=0;j<8;j++){let x=24+(j%2)*13,z=-95+j*16,y=terrainHeight(x,z);const house=new T.Group();house.position.set(x,y,z);scene.add(house);
+ scenery.push([x,y+1.6,z,4,1.6,3]);scenery.push([x,y+3.65,z,3.0,.6,3.35]);
  const shell=box(house,8,3.2,6,0,1.6,0,wallMat);shell.castShadow=shell.receiveShadow=true;const roof=mesh(house,gable(8.6,1.75,6.7),roofMat,0,3.15,0);roof.castShadow=true;
  for(const dx of [-2,2]){box(house,1.25,1.15,.055,dx,1.8,-3.03,trim);box(house,1.04,.94,.07,dx,1.8,-3.07,glass);}
  box(house,1,1.9,.09,0,.95,-3.04,trunkMat);
 }
 const poles=[],crossbars=[],fencePosts=[],fenceRails=[];
-for(let z=-570;z<=570;z+=38){let x=-9,y=terrainHeight(x,z);poles.push([x,y+3.6,z,1,1,1]);crossbars.push([x,y+6.65,z,1,1,1]);}
+for(let z=-570;z<=570;z+=38){let x=-9,y=terrainHeight(x,z);poles.push([x,y+3.6,z,1,1,1]);scenery.push([x,y+3.6,z,.15,3.6,.15]);crossbars.push([x,y+6.65,z,1,1,1]);}
 instance(new T.CylinderGeometry(.085,.15,7.2,7),trunkMat,poles,scene,true);instance(new T.BoxGeometry(1.8,.12,.12),silver,crossbars);
 const wireV=[];for(let j=0;j<poles.length-1;j++)for(const off of [-.7,.7])for(let k=0;k<6;k++){const a=k/6,b=(k+1)/6,p=poles[j],q=poles[j+1];for(const t of [a,b])wireV.push(p[0]+off,p[1]+3.05+(q[1]-p[1])*t-Math.sin(t*Math.PI)*.6,p[2]+(q[2]-p[2])*t);}
 const wireG=new T.BufferGeometry();wireG.setAttribute('position',new T.Float32BufferAttribute(wireV,3));scene.add(new T.LineSegments(wireG,new T.LineBasicMaterial({color:0x424641})));
-for(let z=-110;z<45;z+=2.5){const x=15,y=terrainHeight(x,z);fencePosts.push([x,y+.62,z]);for(const h of [.45,.95])fenceRails.push([x,y+h,z+1.25]);}
+for(let z=-110;z<45;z+=2.5){const x=15,y=terrainHeight(x,z);fencePosts.push([x,y+.62,z]);scenery.push([x,y+.62,z+1.25,.13,.62,1.25]);for(const h of [.45,.95])fenceRails.push([x,y+h,z+1.25]);}
 instance(new T.BoxGeometry(.13,1.25,.13),trunkMat,fencePosts);instance(new T.BoxGeometry(.09,.10,2.5),trunkMat,fenceRails);
 /* ---------- 4. Vehicle surfaces and camera interior ---------- */
 function rounded(w,h,d,r){r=Math.min(r,w*.2,h*.2,d*.4);const x=-w/2,y=-h/2,sh=new T.Shape();sh.moveTo(x+r,y);sh.lineTo(x+w-r,y);sh.quadraticCurveTo(x+w,y,x+w,y+r);sh.lineTo(x+w,y+h-r);sh.quadraticCurveTo(x+w,y+h,x+w-r,y+h);sh.lineTo(x+r,y+h);sh.quadraticCurveTo(x,y+h,x,y+h-r);sh.lineTo(x,y+r);sh.quadraticCurveTo(x,y,x+r,y);const g=new T.ExtrudeGeometry(sh,{depth:d-2*r,bevelEnabled:true,bevelSize:r*.45,bevelThickness:r,bevelSegments:2,steps:1,curveSegments:4});g.translate(0,0,-(d-2*r)/2);return g;}
@@ -331,5 +336,11 @@ scene.traverse(obj=>{if(!obj.isMesh||!obj.material)return;const materials=Array.
  };m.customProgramCacheKey=()=>oldKey+'|height-haze-v1';m.needsUpdate=true;
  }});
 applyTime();applyQuality(1);$('#notice').style.display='none';
-return {renderer,scene,camera,car,drone,wheels,resizeRender,visualsTick,renderVisuals};
+function sceneryContact(p){
+ const ground=Math.abs(p.x)<4?.03:terrainHeight(p.x,p.z)-.075;
+ if(p.y<=ground+.18)return true;
+ for(let i=0;i<scenery.length;i++){const b=scenery[i];if(Math.abs(p.x-b[0])<=b[3]+.16&&Math.abs(p.y-b[1])<=b[4]+.16&&Math.abs(p.z-b[2])<=b[5]+.16)return true;}
+ return false;
+}
+return {renderer,scene,camera,car,drone,wheels,resizeRender,visualsTick,renderVisuals,sceneryContact};
 }
