@@ -1,12 +1,12 @@
 <!doctype html>
-<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>ROADLINE — DEV 04</title>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>ROADLINE — DEV 05</title>
 <link rel="stylesheet" href="./style.css?v=4"></head><body>
 <div id="notice">Загрузка 3D-движка… Интернет необходим для загрузки Three.js.</div>
 <div id="bar"><button data-mode="driver" class="on">Водитель</button><button data-mode="passenger">Пассажир</button><button data-mode="observer">Наблюдатель</button><button data-mode="drone">Полёт</button><button id="cam">Камера</button><button id="reset">Сброс</button><button id="quality">Авто / среднее</button><button id="daytime">День</button><button id="video">Цвет</button></div><div id="visuals"></div>
 <div id="info"></div><div id="hud"><i></i><i></i><div id="ring"></div><div id="cross">×</div></div>
 <div id="controls"><div class="pad"><span></span><button data-key="up">▲</button><span></span><button data-key="left">◀</button><button data-key="down">▼</button><button data-key="right">▶</button></div><div class="right"><button data-key="asc">Вверх</button><button data-key="desc">Вниз / тормоз</button></div></div>
 <script type="module">
-import('./js/main.js?v=4').catch(error=>{
+import('./js/main.js?v=5').catch(error=>{
  const notice=document.querySelector('#notice');
  notice.style.display='grid';
  notice.textContent='Ошибка запуска ROADLINE: '+(error?.message||String(error));
