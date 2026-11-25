@@ -63,7 +63,7 @@ gl_FragColor=vec4(c,1.);
 #include <tonemapping_fragment>
 #include <colorspace_fragment>
 }`});
-const sky=new T.Mesh(new T.SphereGeometry(580,32,16),skyMat);sky.frustumCulled=false;sky.renderOrder=-100;scene.add(sky);
+const sky=new T.Mesh(new T.SphereGeometry(130,32,16),skyMat);sky.frustumCulled=false;sky.renderOrder=-100;scene.add(sky);
 const pmrem=new T.PMREMGenerator(renderer);let envTarget=null;
 const sunOffset=new T.Vector3();
 function updateEnvironment(p){
@@ -154,6 +154,12 @@ float phase=0.;
 #endif
  transformed.x+=sin(windTime*1.7+phase)*position.y*position.y*.24;`);};
 const bladeGeo=new T.BufferGeometry();bladeGeo.setAttribute('position',new T.Float32BufferAttribute([-.075,0,0,.075,0,0,.035,.35,0,-.075,0,0,.035,.35,0,-.012,.65,0,0,0,-.07,0,0,.07,0,.65,0],3));bladeGeo.computeVertexNormals();
+leaf.onBeforeCompile=sh=>{sh.uniforms.windTime=windTime;sh.vertexShader='uniform float windTime;\n'+sh.vertexShader;sh.vertexShader=sh.vertexShader.replace('#include <begin_vertex>',`#include <begin_vertex>
+ #ifdef USE_INSTANCING
+ float branchPhase=instanceMatrix[3].x*.25+instanceMatrix[3].z*.13;
+ transformed.x+=sin(windTime*.9+branchPhase)*.035*(position.y+1.);
+ #endif
+ `);};
 const trunkGeo=new T.CylinderGeometry(.12,.25,3.4,7,2);const crownGeo=new T.IcosahedronGeometry(1,1),farCrownGeo=new T.IcosahedronGeometry(1,0);
 const vegetation=[];
 for(let c=0;c<12;c++){
@@ -188,7 +194,7 @@ const wireG=new T.BufferGeometry();wireG.setAttribute('position',new T.Float32Bu
 for(let z=-110;z<45;z+=2.5){const x=15,y=terrainHeight(x,z);fencePosts.push([x,y+.62,z]);for(const h of [.45,.95])fenceRails.push([x,y+h,z+1.25]);}
 instance(new T.BoxGeometry(.13,1.25,.13),trunkMat,fencePosts);instance(new T.BoxGeometry(.09,.10,2.5),trunkMat,fenceRails);
 /* ---------- 4. Vehicle surfaces and camera interior ---------- */
-function rounded(w,h,d,r){r=Math.min(r,w*.2,h*.2);const x=-w/2,y=-h/2,sh=new T.Shape();sh.moveTo(x+r,y);sh.lineTo(x+w-r,y);sh.quadraticCurveTo(x+w,y,x+w,y+r);sh.lineTo(x+w,y+h-r);sh.quadraticCurveTo(x+w,y+h,x+w-r,y+h);sh.lineTo(x+r,y+h);sh.quadraticCurveTo(x,y+h,x,y+h-r);sh.lineTo(x,y+r);sh.quadraticCurveTo(x,y,x+r,y);const g=new T.ExtrudeGeometry(sh,{depth:d-2*r,bevelEnabled:true,bevelSize:r*.45,bevelThickness:r,bevelSegments:2,steps:1,curveSegments:4});g.translate(0,0,-(d-2*r)/2);return g;}
+function rounded(w,h,d,r){r=Math.min(r,w*.2,h*.2,d*.4);const x=-w/2,y=-h/2,sh=new T.Shape();sh.moveTo(x+r,y);sh.lineTo(x+w-r,y);sh.quadraticCurveTo(x+w,y,x+w,y+r);sh.lineTo(x+w,y+h-r);sh.quadraticCurveTo(x+w,y+h,x+w-r,y+h);sh.lineTo(x+r,y+h);sh.quadraticCurveTo(x,y+h,x,y+h-r);sh.lineTo(x,y+r);sh.quadraticCurveTo(x,y,x+r,y);const g=new T.ExtrudeGeometry(sh,{depth:d-2*r,bevelEnabled:true,bevelSize:r*.45,bevelThickness:r,bevelSegments:2,steps:1,curveSegments:4});g.translate(0,0,-(d-2*r)/2);return g;}
 function roundedPart(parent,w,h,d,x,y,z,m,r=.08){let o=mesh(parent,rounded(w,h,d,r),m,x,y,z);o.castShadow=true;o.receiveShadow=true;return o;}
 const car=new T.Group();scene.add(car);
 roundedPart(car,1.87,.47,4.45,0,.80,0,body,.11);
@@ -275,9 +281,9 @@ function initPost(){
 }
 const drawSize=new T.Vector2();
 function resizeRender(){renderer.setSize(innerWidth,innerHeight);if(rt){renderer.getDrawingBufferSize(drawSize);rt.setSize(drawSize.x,drawSize.y);post.uniforms.pixel.value.set(1/drawSize.x,1/drawSize.y);}}
-let videoMode=0;
+let videoMode=0,lastVideo=-1;
 $('#video').onclick=()=>{videoMode=(videoMode+1)%3;$('#video').textContent=['Цвет','Аналог','Тепловой стиль'][videoMode];};
-function videoTick(){const active=mode==='drone'&&!chase;const video=active?videoMode:0;const f=video===1?'saturate(.68) contrast(1.08) sepia(.16)':video===2?'grayscale(1) contrast(1.65)':'none';if(renderer.domElement.style.filter!==f)renderer.domElement.style.filter=f;$('#visuals').classList.toggle('analog',video===1);}
+function videoTick(){const active=mode==='drone'&&!chase;const video=active?videoMode:0;if(lastVideo===video)return;lastVideo=video;const f=video===1?'saturate(.68) contrast(1.08) sepia(.16)':video===2?'grayscale(1) contrast(1.65)':'none';if(renderer.domElement.style.filter!==f)renderer.domElement.style.filter=f;$('#visuals').classList.toggle('analog',video===1);}
 /* ---------- 6. Adaptive rendering, without modifying movement ---------- */
 const levels=[{label:'Низкое',dpr:.75,shadows:false,map:512,range:155,fog:.009},{label:'Среднее',dpr:1.1,shadows:true,map:1024,range:245,fog:.006},{label:'Высокое',dpr:1.5,shadows:true,map:2048,range:390,fog:.0042}];
 function applyQuality(q){
@@ -311,6 +317,35 @@ function visualsTick(dt,rawDt,steer){
 function renderVisuals(){
  if(quality===2&&rt){renderer.setRenderTarget(rt);renderer.render(scene,camera);renderer.setRenderTarget(null);post.uniforms.clock.value=elapsed;renderer.render(postScene,postCam);}else renderer.render(scene,camera);
 }
+// Height-dependent atmospheric haze on standard and physical surfaces.
+const foggedMaterials=new Set();
+scene.traverse(obj=>{if(!obj.isMesh||!obj.material)return;const materials=Array.isArray(obj.material)?obj.material:[obj.material];
+ for(const m of materials){if(!m.isMeshStandardMaterial||foggedMaterials.has(m))continue;foggedMaterials.add(m);
+ const old=m.onBeforeCompile,oldKey=m.customProgramCacheKey();
+ m.onBeforeCompile=function(sh,renderer){
+ old.call(this,sh,renderer);
+ sh.vertexShader='varying float vHeightFog;\n'+sh.vertexShader;
+ sh.vertexShader=sh.vertexShader.replace('#include <project_vertex>',`#include <project_vertex>
+ vec4 fogWorld=vec4(transformed,1.);
+ #ifdef USE_INSTANCING
+ fogWorld=instanceMatrix*fogWorld;
+ #endif
+ vHeightFog=(modelMatrix*fogWorld).y;`);
+ sh.fragmentShader='varying float vHeightFog;\n'+sh.fragmentShader;
+ sh.fragmentShader=sh.fragmentShader.replace('#include <fog_fragment>',`
+ #ifdef USE_FOG
+ #ifdef FOG_EXP2
+ float heightScale=mix(1.30,.58,smoothstep(0.,35.,vHeightFog));
+ float fd=fogDensity*vFogDepth*heightScale;
+ float fogFactor=1.-exp(-fd*fd);
+ #else
+ float fogFactor=smoothstep(fogNear,fogFar,vFogDepth);
+ #endif
+ gl_FragColor.rgb=mix(gl_FragColor.rgb,fogColor,fogFactor);
+ #endif
+ `);
+ };m.customProgramCacheKey=()=>oldKey+'|height-haze-v1';m.needsUpdate=true;
+ }});
 applyTime();applyQuality(1);$('#notice').style.display='none';
 let mode='driver',chase=false,v=0,heading=0,look=0,pitch=0,dv=new T.Vector3(),keys={},fps=0;
 // Abstract arcade flight parameters for the browser prototype, in scene units.
@@ -354,5 +389,5 @@ camera.position.copy(drone.position);camera.rotation.set(pitch,flight.yaw+look,0
 }
 $('#cross').style.top=(50+pitch*18)+'%';
 }
-$('#hud').style.display=mode==='drone'&&!chase?'block':'none';$('#info').textContent='DEV 03 • '+(mode==='drone'?'Высота '+drone.position.y.toFixed(1)+' • Скорость '+flight.speed.toFixed(1)+' ед/с':mode==='driver'?'Ручное управление':'Автовождение — тест')+'\n'+(mode==='drone'?' + / −: скорость • ◀ / ▶: курс • ':Math.round(Math.abs(v)*3.6)+' км/ч • ')+Math.round(fps)+' FPS';visualsTick(dt,rawDt,steer);renderVisuals();}loop();
+$('#hud').style.display=mode==='drone'&&!chase?'block':'none';if(frame%8===0)$('#info').textContent='DEV 03 • '+(mode==='drone'?'Высота '+drone.position.y.toFixed(1)+' • Скорость '+flight.speed.toFixed(1)+' ед/с':mode==='driver'?'Ручное управление':'Автовождение — тест')+'\n'+(mode==='drone'?' + / −: скорость • ◀ / ▶: курс • ':Math.round(Math.abs(v)*3.6)+' км/ч • ')+Math.round(fps)+' FPS';visualsTick(dt,rawDt,steer);renderVisuals();}loop();
 </script></body></html>
