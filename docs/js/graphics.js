@@ -26,23 +26,25 @@ let seed=41;
 function rand(){seed=(1664525*seed+1013904223)>>>0;return seed/4294967296}
 const clamp=(x,a,b)=>Math.max(a,Math.min(b,x));
 const smooth=(a,b,x)=>{let t=clamp((x-a)/(b-a),0,1);return t*t*(3-2*t)};
+let weather=0;
+const weatherNames=['Ясно','Пасмурно','Дождь'];
 const times=[
  {name:'День',top:0x477eb4,horizon:0xc7d7d8,cloud:0xf4f1e9,fog:0xb1c4c9,sun:0xfff2d9,dir:[-.48,.78,-.39],light:3.1,ambient:1.55,exposure:1.05},
  {name:'Закат',top:0x354e82,horizon:0xf2a773,cloud:0xe4b0a0,fog:0xb9988e,sun:0xffb575,dir:[-.81,.22,-.55],light:2.3,ambient:.95,exposure:1.08},
  {name:'Ночь',top:0x070f25,horizon:0x28394d,cloud:0x344052,fog:0x243044,sun:0xb8d2ff,dir:[.3,.68,-.6],light:.16,ambient:.43,exposure:1.2}
 ];
 let timeIndex=0,elapsed=0,quality=1,autoQuality=true,frame=0;
-const skyUniform={topColor:{value:new T.Color()},horizonColor:{value:new T.Color()},cloudColor:{value:new T.Color()},sunDirection:{value:new T.Vector3()},sunColor:{value:new T.Color()},time:{value:0},night:{value:0}};
+const skyUniform={topColor:{value:new T.Color()},horizonColor:{value:new T.Color()},cloudColor:{value:new T.Color()},sunDirection:{value:new T.Vector3()},sunColor:{value:new T.Color()},time:{value:0},night:{value:0},weather:{value:0}};
 const skyMat=new T.ShaderMaterial({uniforms:skyUniform,side:T.BackSide,depthWrite:false,fog:false,
 vertexShader:`varying vec3 dir;void main(){dir=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}`,
-fragmentShader:`varying vec3 dir;uniform vec3 topColor,horizonColor,cloudColor,sunDirection,sunColor;uniform float time,night;
+fragmentShader:`varying vec3 dir;uniform vec3 topColor,horizonColor,cloudColor,sunDirection,sunColor;uniform float time,night,weather;
 float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
 float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.-2.*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
 void main(){vec3 d=normalize(dir);float h=max(d.y,0.);vec3 c=mix(horizonColor,topColor,pow(h,.55));
 vec2 uv=d.xz/(max(d.y,0.)+.23)*2.5+vec2(time*.009,0.);
 float n=noise(uv)*.58+noise(uv*2.1)*.27+noise(uv*4.4)*.15;
-float cl=smoothstep(.49,.72,n)*smoothstep(.01,.22,h);c=mix(c,cloudColor,cl*.72);
-float sd=max(dot(d,sunDirection),0.);c+=sunColor*(pow(sd,26.)*.22+smoothstep(.9992,.9998,sd)*2.5)*(1.-night*.75);
+float cl=smoothstep(mix(.49,.31,weather),mix(.72,.62,weather),n)*smoothstep(.01,.22,h);c=mix(c,cloudColor,cl*.78);c=mix(c,vec3(dot(c,vec3(.2126,.7152,.0722)))*.75,weather*.5);
+float sd=max(dot(d,sunDirection),0.);c+=sunColor*(pow(sd,26.)*.22+smoothstep(.9992,.9998,sd)*2.5)*(1.-night*.75)*(1.-weather*.9);
 gl_FragColor=vec4(c,1.);
 #include <tonemapping_fragment>
 #include <colorspace_fragment>
@@ -64,7 +66,7 @@ function applyTime(){
  skyUniform.sunDirection.value.set(...p.dir).normalize();skyUniform.sunColor.value.setHex(p.sun);skyUniform.night.value=timeIndex===2?1:0;
  sunOffset.copy(skyUniform.sunDirection.value).multiplyScalar(95);sun.color.setHex(p.sun);sun.intensity=p.light;hemi.intensity=p.ambient;hemi.color.setHex(timeIndex===2?0xa9bce0:0xe5edff);
  scene.fog.color.setHex(p.fog);renderer.toneMappingExposure=p.exposure;updateEnvironment(p);$('#daytime').textContent=p.name;
- renderer.shadowMap.needsUpdate=true;
+ applyWeather();renderer.shadowMap.needsUpdate=true;
 }
 /* ---------- 2. Procedural textures and terrain ---------- */
 function canvasTex(kind,size=256){
@@ -126,6 +128,17 @@ function instance(geo,mat,items,parent=scene,shadow=false){
 }
 const marks=[];for(let z=-590;z<600;z+=11)marks.push([0,.037,z,1,1,1,0,0,0,rand()>.23?0xe3e2d0:0xb6b5a2]);instance(new T.BoxGeometry(.11,.006,4),stripe,marks);
 for(const x of [-3.7,3.7])box(scene,.10,.006,1200,x,.038,0,stripe);
+// Subtle asphalt repairs and reflective roadside delineators.
+const patchMat=mat(0x565651,{map:repeat(tex.asphalt,1,2),roughness:.98});
+const patches=[],posts=[],reflectors=[];
+for(let i=0;i<100;i++){const z=-570+rand()*1140,x=(rand()-.5)*6.5;patches.push([x,.031,z,.5+rand()*1.3,1,.6+rand()*2,0,(rand()-.5)*.15,0]);}
+instance(new T.BoxGeometry(.85,.002,1.5),patchMat,patches);
+const postMat=mat(0xb7b9b1),reflMat=mat(0xe9dfc5,{emissive:0xd4b77c,emissiveIntensity:.18});
+for(let z=-550;z<560;z+=26)for(const x of [-5.7,5.7]){
+ const y=terrainHeight(x,z);posts.push([x,y+.44,z]);reflectors.push([x,y+.70,z]);
+}
+instance(new T.BoxGeometry(.095,.88,.12),postMat,posts);
+instance(new T.BoxGeometry(.11,.16,.14),reflMat,reflectors);
 const wear=mat(0x33352f,{transparent:true,opacity:.14,depthWrite:false});for(const x of [-2.6,-.8,.8,2.6])box(scene,.19,.002,1200,x,.034,0,wear);
 /* ---------- 3. Roadside geometry, vegetation and LOD ---------- */
 const windTime={value:0};
@@ -226,6 +239,28 @@ const steeringWheel=mesh(cabin,new T.TorusGeometry(.18,.024,8,28),black,-.37,1.4
 box(cabin,.24,.025,.022,-.37,1.47,-.84,silver);box(cabin,.31,.11,.06,-.37,1.48,-1.04,frameMat);
 const gaugeMat=mat(0x25382c,{emissive:0x194d26,emissiveIntensity:.65});
 for(const x of [-.44,-.30])mesh(cabin,new T.CircleGeometry(.044,16),gaugeMat,x,1.5,-1.002);
+// Textured cabin with working speed display and instrument illumination.
+const instrumentCanvas=document.createElement('canvas');instrumentCanvas.width=512;instrumentCanvas.height=256;
+const instrumentCtx=instrumentCanvas.getContext('2d');const instrumentTex=new T.CanvasTexture(instrumentCanvas);instrumentTex.colorSpace=T.SRGBColorSpace;
+const instrumentMat=new T.MeshBasicMaterial({map:instrumentTex,toneMapped:false});
+const panel=mesh(cabin,new T.PlaneGeometry(.34,.17),instrumentMat,-.37,1.51,-.995);panel.rotation.x=-.12;
+const ventMat=mat(0x15191a),seatMat=mat(0x303332,{map:tex.bump,roughness:1});
+for(const x of [-.67,-.04,.20,.61]){roundedPart(cabin,.14,.075,.036,x,1.41,-.815,ventMat,.016);for(let i=0;i<4;i++)box(cabin,.105,.004,.009,x,1.385+i*.016,-.791,silver);}
+roundedPart(cabin,.24,.24,.17,.12,1.18,-.71,black,.025);
+mesh(cabin,new T.CylinderGeometry(.027,.027,.17,12),silver,.12,1.15,-.39);
+mesh(cabin,new T.SphereGeometry(.045,12,8),black,.12,1.24,-.39);
+for(const x of [-.76,.76]){roundedPart(cabin,.08,.33,1.05,x,1.22,-.33,seatMat,.025);box(cabin,.05,.045,.22,x,1.40,-.15,silver);}
+const mirror=roundedPart(cabin,.25,.09,.045,0,1.91,-.85,glass,.015);
+let lastSpeed=-1,lastNight=-1;
+function drawInstruments(v,night){
+ const k=Math.round(Math.abs(v)*3.6);
+ if(k===lastSpeed&&night===lastNight)return;lastSpeed=k;lastNight=night;
+ const g=instrumentCtx;g.fillStyle='#101618';g.fillRect(0,0,512,256);
+ for(const cx of [130,382]){g.strokeStyle='#687574';g.lineWidth=3;g.beginPath();g.arc(cx,116,87,0,Math.PI*2);g.stroke();
+ for(let i=0;i<=12;i++){const a=Math.PI*.75+i*Math.PI*1.5/12;g.beginPath();g.moveTo(cx+Math.cos(a)*70,116+Math.sin(a)*70);g.lineTo(cx+Math.cos(a)*82,116+Math.sin(a)*82);g.stroke();}
+ const a=Math.PI*.75+Math.min(k/110,1)*Math.PI*1.5;g.strokeStyle='#f0a65a';g.lineWidth=4;g.beginPath();g.moveTo(cx,116);g.lineTo(cx+Math.cos(a)*60,116+Math.sin(a)*60);g.stroke();}
+ g.fillStyle=night?'#9ed5b2':'#dde4de';g.font='bold 40px monospace';g.textAlign='center';g.fillText(String(k),256,222);g.font='17px monospace';g.fillText('km/h',256,245);instrumentTex.needsUpdate=true;
+}
 const lights=new T.Group();scene.add(lights);const headlights=[];
 for(const x of [-.7,.7]){const l=new T.SpotLight(0xffe3a8,0,48,.31,.56,1.45);l.position.set(x,1.06,-2.28);l.target.position.set(x,-.6,-23);lights.add(l,l.target);headlights.push(l);}
 const drone=new T.Group();scene.add(drone);const rotorGroups=[];
@@ -273,12 +308,36 @@ function resizeRender(){renderer.setSize(innerWidth,innerHeight);if(rt){renderer
 let videoMode=0,lastVideo=-1;
 $('#video').onclick=()=>{videoMode=(videoMode+1)%3;$('#video').textContent=['Цвет','Аналог','Тепловой стиль'][videoMode];};
 function videoTick(mode,chase){const active=mode==='drone'&&!chase;const video=active?videoMode:0;if(lastVideo===video)return;lastVideo=video;const f=video===1?'saturate(.68) contrast(1.08) sepia(.16)':video===2?'grayscale(1) contrast(1.65)':'none';if(renderer.domElement.style.filter!==f)renderer.domElement.style.filter=f;$('#visuals').classList.toggle('analog',video===1);}
+// Camera-local rain, visual only; no changes to vehicle or flight movement.
+const rainN=350,rainCoords=new Float32Array(rainN*6),rainSpeeds=new Float32Array(rainN);
+const rainGeo=new T.BufferGeometry();rainGeo.setAttribute('position',new T.BufferAttribute(rainCoords,3).setUsage(T.DynamicDrawUsage));
+const rainMat=new T.LineBasicMaterial({color:0xb7c4cf,transparent:true,opacity:.30,depthWrite:false});
+const rain=new T.LineSegments(rainGeo,rainMat);rain.frustumCulled=false;scene.add(rain);rain.visible=false;
+function resetDrop(i,randomY){const k=i*6;rainCoords[k]=(rand()-.5)*22;rainCoords[k+1]=randomY?(rand()-.5)*16:8;rainCoords[k+2]=(rand()-.5)*22;rainSpeeds[i]=8+rand()*5;}
+for(let i=0;i<rainN;i++)resetDrop(i,true);
+function weatherTick(dt){
+ rain.visible=weather===2; if(!rain.visible)return;
+ rain.position.copy(camera.position);const count=quality===0?100:quality===1?220:rainN;
+ rainGeo.setDrawRange(0,count*2);
+ for(let i=0;i<count;i++){const k=i*6;rainCoords[k+1]-=rainSpeeds[i]*dt;rainCoords[k]+=dt*1.1;if(rainCoords[k+1]<-8||rainCoords[k]>11)resetDrop(i,false);rainCoords[k+3]=rainCoords[k]-.035;rainCoords[k+4]=rainCoords[k+1]+.22;rainCoords[k+5]=rainCoords[k+2];}
+ rainGeo.attributes.position.needsUpdate=true;
+}
+function applyWeather(){
+ const p=times[timeIndex],w=weather/2;
+ skyUniform.weather.value=w;sun.intensity=p.light*(1-w*.82);hemi.intensity=p.ambient*(1-w*.18);
+ scene.fog.color.setHex(p.fog).lerp(weatherGray,w*.65);scene.fog.density=levels[quality].fog*(1+w*1.65);
+ asphalt.roughness=weather===2?.28:.88;asphalt.color.setHex(weather===2?0xa6a6a6:0xffffff);
+ asphalt.envMapIntensity=weather===2?1.3:.45;road.material.needsUpdate=true;
+ $('#weather').textContent=weatherNames[weather];
+}
+const weatherGray=new T.Color(0x88939b);
+$('#weather').onclick=()=>{weather=(weather+1)%3;applyWeather();};
 /* ---------- 6. Adaptive rendering, without modifying movement ---------- */
 const levels=[{label:'Низкое',dpr:.75,shadows:false,map:512,range:155,fog:.009},{label:'Среднее',dpr:1.1,shadows:true,map:1024,range:245,fog:.006},{label:'Высокое',dpr:1.5,shadows:true,map:2048,range:390,fog:.0042}];
 function applyQuality(q){
  quality=q;const p=levels[q];renderer.setPixelRatio(Math.min(devicePixelRatio,p.dpr));renderer.shadowMap.enabled=p.shadows;sun.castShadow=p.shadows;
  if(sun.shadow.mapSize.x!==p.map){if(sun.shadow.map){sun.shadow.map.dispose();sun.shadow.map=null;}sun.shadow.mapSize.set(p.map,p.map);}
- scene.fog.density=p.fog;renderer.shadowMap.needsUpdate=true;camera.far=p.range+160;camera.updateProjectionMatrix();
+ scene.fog.density=p.fog;applyWeather();renderer.shadowMap.needsUpdate=true;camera.far=p.range+160;camera.updateProjectionMatrix();
  if(q===2&&!rt)initPost();resizeRender();$('#quality').textContent=(autoQuality?'Авто / ':'')+p.label.toLowerCase();
 }
 $('#quality').onclick=()=>{if(autoQuality){autoQuality=false;applyQuality(0);}else if(quality<2)applyQuality(quality+1);else{autoQuality=true;applyQuality(1);}qualityTimer=0;};
@@ -298,7 +357,7 @@ function visualsTick(dt,rawDt,steer,mode,chase,v,heading){
  if(quality>0&&frame%(quality===2?3:5)===1){camFocus.set(Math.round(camera.position.x/8)*8,0,Math.round(camera.position.z/8)*8);sun.target.position.copy(camFocus);sun.position.copy(camFocus).add(sunOffset);renderer.shadowMap.needsUpdate=true;}
  // Set sun location even with shadows off.
  if(quality===0){sun.target.position.set(0,0,0);sun.position.copy(sunOffset);}
- dustTick(dt,mode,v,heading);videoTick(mode,chase);
+ if(cabin.visible)drawInstruments(v,night);weatherTick(dt);dustTick(dt,mode,v,heading);videoTick(mode,chase);
  const instantaneous=1/Math.max(rawDt,.001);realFPS+=(instantaneous-realFPS)*.04;
  qualityTimer+=rawDt;qualityCooldown=Math.max(0,qualityCooldown-rawDt);
  if(autoQuality&&qualityTimer>3&&qualityCooldown===0){if(realFPS<43&&quality>0){applyQuality(quality-1);qualityCooldown=7;}else if(realFPS>57&&quality<1){applyQuality(1);qualityCooldown=10;}qualityTimer=0;}
