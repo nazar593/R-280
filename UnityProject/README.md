@@ -37,3 +37,6 @@ Unity 6.0 LTS (6000.0.23f1). This is a separate native Android prototype, not a 
 
 ## Roadmap
 01 project and controls; 02 terrain and surface materials; 03 suspension and vehicle handling; 04 component damage; 05 fictional gameplay combat effects; 06 audio; 07 VFX; 08 flight and HUD refinement; 09 game AI; 10 Android profiling and build. Multiplayer after the offline vertical slice.
+
+## GitHub Actions (optional)
+The Unity workflow on this branch is triggered by commits affecting UnityProject or its workflow file. Configure a valid Unity CI license in GitHub repository Actions secrets using https://game.ci/docs/github/activation/ (do not share login credentials in chat or commit them). A failed run can be rerun after setup. On success, download R280-stage01-APK from the run's Artifacts section. The existing browser APK workflow is untouched. F12 during desktop play saves a real in-game screenshot to Application.persistentDataPath. Android screenshots can be captured with the phone's built-in screenshot feature.

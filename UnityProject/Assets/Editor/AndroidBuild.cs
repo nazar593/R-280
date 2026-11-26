@@ -9,11 +9,22 @@ namespace R280.Editor {
         const string ScenePath="Assets/Scenes/Stage01.unity";
         [MenuItem("R-280/Create or open Stage 01")]
         public static void OpenScene() {
+            EnsureMaterials();
             if(File.Exists(ScenePath)) {EditorSceneManager.OpenScene(ScenePath);return;}
             Directory.CreateDirectory("Assets/Scenes");
             var scene=EditorSceneManager.NewScene(NewSceneSetup.EmptyScene,NewSceneMode.Single);
             EditorSceneManager.SaveScene(scene,ScenePath);
             EditorBuildSettings.scenes=new[]{new EditorBuildSettingsScene(ScenePath,true)};
+        }
+        static void EnsureMaterials() {
+            Directory.CreateDirectory("Assets/Resources");
+            const string path="Assets/Resources/StageStandard.mat";
+            if(AssetDatabase.LoadAssetAtPath<Material>(path)==null) {
+                var shader=Shader.Find("Standard");
+                if(shader==null) throw new System.Exception("Built-in Standard shader unavailable");
+                AssetDatabase.CreateAsset(new Material(shader),path);
+                AssetDatabase.SaveAssets();
+            }
         }
         [MenuItem("R-280/Build Android APK")]
         public static void Build() {
@@ -28,6 +39,7 @@ namespace R280.Editor {
             PlayerSettings.Android.minSdkVersion=AndroidSdkVersions.AndroidApiLevel26;
             PlayerSettings.Android.bundleVersionCode=1;
             EditorUserBuildSettings.buildAppBundle=false;
+            PlayerSettings.SetUseDefaultGraphicsAPIs(BuildTarget.Android,false);
             PlayerSettings.SetGraphicsAPIs(BuildTarget.Android,new[]{UnityEngine.Rendering.GraphicsDeviceType.OpenGLES3});
             Directory.CreateDirectory("Builds");
             var options=new BuildPlayerOptions { scenes=new[]{ScenePath},locationPathName="Builds/R280-stage01.apk",target=BuildTarget.Android,options=BuildOptions.None };

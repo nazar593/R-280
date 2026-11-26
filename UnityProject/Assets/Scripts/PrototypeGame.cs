@@ -24,7 +24,8 @@ namespace R280 {
             QualitySettings.vSyncCount=0;
             Time.fixedDeltaTime=.02f;
             Screen.orientation=ScreenOrientation.LandscapeLeft;
-            Shader shader=Shader.Find("Standard") ?? Shader.Find("Diffuse");
+            var template=Resources.Load<Material>("StageStandard");
+            Shader shader=template!=null?template.shader:Shader.Find("Standard");
             paint=Mat(shader,new Color(.31f,.36f,.24f)); dark=Mat(shader,new Color(.08f,.09f,.09f));
             glass=Mat(shader,new Color(.19f,.31f,.34f)); road=Mat(shader,new Color(.19f,.20f,.20f));
             ground=Mat(shader,new Color(.37f,.43f,.29f)); light=Mat(shader,new Color(.85f,.83f,.68f));
@@ -97,6 +98,7 @@ namespace R280 {
             }
         }
         void Update() {
+            if(Input.GetKeyDown(KeyCode.F12)) ScreenCapture.CaptureScreenshot(System.IO.Path.Combine(Application.persistentDataPath,"R280-"+System.DateTime.Now.ToString("yyyyMMdd-HHmmss")+".png"));
             if(role==Role.Menu) return;
             if(Input.GetKeyDown(KeyCode.Escape)) paused=!paused;
             if(Input.GetKeyDown(KeyCode.R)) controlled.ResetPose();
