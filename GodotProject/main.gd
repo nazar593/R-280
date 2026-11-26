@@ -9,7 +9,7 @@ var camera: Camera3D
 var menu: VBoxContainer
 var panel: HBoxContainer
 var status: Label
-var hud: Control
+var hud: Hud
 var world: Node3D
 var sun: DirectionalLight3D
 var left := Vector2.ZERO
