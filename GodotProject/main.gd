@@ -2,6 +2,8 @@ extends Node3D
 
 const Hud := preload("res://hud.gd")
 const Terrain := preload("res://terrain.gd")
+const VehicleDynamics := preload("res://vehicle_dynamics.gd")
+var dynamics: VehicleDynamics
 var landscape: Terrain
 var role := ""
 var vehicle: Node3D
@@ -53,7 +55,17 @@ func _ready() -> void:
 
 func smoke_test() -> void:
 	spawn("Pickup")
-	await get_tree().physics_frame
+	for i in range(45):
+		await get_tree().physics_frame
+	left=Vector2(0,-1)
+	for i in range(100):
+		await get_tree().physics_frame
+	print("R280 pickup test speed: ", car.linear_velocity.length(), " contacts: ", dynamics.contact_count)
+	if not is_finite(car.linear_velocity.length()) or dynamics.contact_count==0 or car.linear_velocity.length()<0.25:
+		push_error("R280 vehicle motion smoke test failed")
+		get_tree().quit(1)
+		return
+	left=Vector2.ZERO
 	spawn("Van")
 	await get_tree().physics_frame
 	spawn("Flight")
@@ -168,7 +180,7 @@ func make_ui() -> void:
 		var label: String = {"Pickup":"MOG / Pickup", "Van":"MOG / Utility van", "Flight":"UAV / Hornet prototype"}[option]
 		add_button(menu,label,spawn.bind(option))
 	var note := Label.new()
-	note.text = "Stage 02 · open test map"
+	note.text = "Stage 03 · vehicle physics"
 	note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	menu.add_child(note)
 	panel = HBoxContainer.new()
@@ -253,6 +265,8 @@ func spawn(which: String) -> void:
 			vis.material_override = mat(dark)
 			wheel.add_child(vis)
 			vis.rotation.z = PI/2
+		dynamics=VehicleDynamics.new()
+		dynamics.configure(car,van)
 		vehicle = car
 	menu.hide()
 	panel.show()
@@ -264,6 +278,7 @@ func clear_vehicle() -> void:
 		vehicle.queue_free()
 	vehicle = null
 	car = null
+	dynamics = null
 	drone = null
 	left = Vector2.ZERO
 	right = Vector2.ZERO
@@ -363,10 +378,7 @@ func _physics_process(dt: float) -> void:
 		if absf(drone.position.x)>495 or absf(drone.position.z)>495 or drone.position.y < -25:
 			reset_vehicle()
 	else:
-		steering = move_toward(steering,-move.x*0.48,dt*1.5)
-		car.steering = steering
-		car.engine_force = 0 if stopping else -move.y*850
-		car.brake = 45 if stopping else 1.5 if abs(move.y)<0.03 else 0.0
+		dynamics.step(dt,move,stopping,landscape)
 		yaw = clampf(yaw-look.x*dt*1.3*sensitivity,-1.7,1.7)
 		pitch = clampf(pitch-look.y*dt*sensitivity,-0.5,0.6)
 		if absf(car.position.x)>495 or absf(car.position.z)>495 or car.position.y < -25:
@@ -378,6 +390,10 @@ func _process(dt: float) -> void:
 	if role == "" or not is_instance_valid(vehicle):
 		return
 	hud.visible_reticle = role=="Flight" and seat==0
+	if role!="Flight" and dynamics!=null:
+		hud.drive_info="%s  |  %s  |  %d/4 wheels" % [("R" if dynamics.gear<0 else "N" if dynamics.gear==0 else str(dynamics.gear)),dynamics.surface,dynamics.contact_count]
+	else:
+		hud.drive_info=""
 	hud.queue_redraw()
 	var speed := drone.velocity.length() if role=="Flight" else car.linear_velocity.length()
 	status.text = "%s | %d km/h | %s | %d FPS%s" % [role,roundi(speed*3.6),landscape.surface_at(vehicle.position.x,vehicle.position.z) if role!="Flight" else ("%d m" % roundi(vehicle.position.y)),Engine.get_frames_per_second()," PAUSED" if is_paused else ""]

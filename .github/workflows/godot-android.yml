@@ -1,4 +1,4 @@
-name: Godot Android Stage 02
+name: Godot Android Stage 03
 on:
   push:
     branches: [godot-stage-01]
@@ -44,7 +44,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: R280-stage02-previews
+          name: R280-stage03-previews
           path: GodotProject/build/previews/*.png
           if-no-files-found: ignore
       - name: Set up Android command-line tools
@@ -75,11 +75,11 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p GodotProject/build
-          godot --headless --path GodotProject --export-debug Android build/R280-stage02.apk
-          test -s GodotProject/build/R280-stage02.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify GodotProject/build/R280-stage02.apk
+          godot --headless --path GodotProject --export-debug Android build/R280-stage03.apk
+          test -s GodotProject/build/R280-stage03.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify GodotProject/build/R280-stage03.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: R280-stage02-APK
-          path: GodotProject/build/R280-stage02.apk
+          name: R280-stage03-APK
+          path: GodotProject/build/R280-stage03.apk
           if-no-files-found: error
