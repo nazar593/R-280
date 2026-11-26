@@ -1,5 +1,5 @@
 import * as T from 'https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js';
-import {createGraphics} from './graphics.js?v=5';
+import {createGraphics} from './graphics.js?v=6';
 import {installControls} from './input.js?v=4';
 import {createCrashEffect} from './crash.js?v=5';
 const $=x=>document.querySelector(x);
@@ -57,4 +57,4 @@ else if(chase){local.set(0,2,5).applyAxisAngle(T.Object3D.DEFAULT_UP,flight.yaw)
 else{camera.position.copy(drone.position);camera.rotation.set(flight.nose,flight.yaw,0,'YXZ');}
 $('#cross').style.top=(50+flight.nose*18)+'%';
 }
-$('#hud').style.display=mode==='drone'&&!chase&&!crashed?'block':'none';if(uiFrame++%8===0)$('#info').textContent='DEV 05 • '+(mode==='drone'&&crashed?'Авария — нажми Сброс':mode==='drone'?'Высота '+drone.position.y.toFixed(1)+' • Скорость '+flight.speed.toFixed(1)+' ед/с':mode==='driver'?'Ручное управление':'Автовождение — тест')+'\n'+(mode==='drone'?' + / −: скорость • ◀ / ▶: курс • ':Math.round(Math.abs(v)*3.6)+' км/ч • ')+Math.round(fps)+' FPS';crashEffect.tick(dt);visualsTick(dt,rawDt,steer,mode,chase||crashed&&mode==='drone',v,heading);renderVisuals();}loop();
+$('#hud').style.display=mode==='drone'&&!chase&&!crashed?'block':'none';if(uiFrame++%8===0)$('#info').textContent='DEV 06 • '+(mode==='drone'&&crashed?'Авария — нажми Сброс':mode==='drone'?'Высота '+drone.position.y.toFixed(1)+' • Скорость '+flight.speed.toFixed(1)+' ед/с':mode==='driver'?'Ручное управление':'Автовождение — тест')+'\n'+(mode==='drone'?' + / −: скорость • ◀ / ▶: курс • ':Math.round(Math.abs(v)*3.6)+' км/ч • ')+Math.round(fps)+' FPS';crashEffect.tick(dt);visualsTick(dt,rawDt,steer,mode,chase||crashed&&mode==='drone',v,heading);renderVisuals();}loop();
