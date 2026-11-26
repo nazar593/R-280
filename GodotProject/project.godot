@@ -2,7 +2,7 @@ config_version=5
 
 [application]
 config/name="R-280"
-run/main_scene="res://main.tscn"
+run/main_scene="res://sandbox.tscn"
 config/features=PackedStringArray("4.5", "GL Compatibility")
 
 [display]

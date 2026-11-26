@@ -1,7 +1,7 @@
-name: Godot Android Stage 03
+name: R-280 Voxel Sandbox 01
 on:
   push:
-    branches: [godot-stage-01]
+    branches: [voxel-sandbox]
     paths:
       - 'GodotProject/**'
       - '.github/workflows/godot-android.yml'
@@ -31,20 +31,23 @@ jobs:
           set -euo pipefail
           godot --headless --path GodotProject --editor --import --quit 2>&1 | tee /tmp/import.log
           if grep -E 'SCRIPT ERROR|Parse Error' /tmp/import.log; then exit 1; fi
-          timeout 90 godot --headless --path GodotProject -- --smoke-test 2>&1 | tee /tmp/smoke.log
+          timeout 90 godot --headless --path GodotProject res://main.tscn -- --smoke-test 2>&1 | tee /tmp/smoke.log
           if grep -E 'SCRIPT ERROR|Parse Error' /tmp/smoke.log; then exit 1; fi
           grep -q 'role initialization smoke test complete' /tmp/smoke.log
+          timeout 90 godot --headless --path GodotProject -- --voxel-test 2>&1 | tee /tmp/voxel.log
+          if grep -E 'SCRIPT ERROR|Parse Error' /tmp/voxel.log; then exit 1; fi
+          grep -q 'voxel removal and restore smoke test complete' /tmp/voxel.log
       - name: Render real in-engine previews
         continue-on-error: true
         run: |
           set -e
           mkdir -p GodotProject/build/previews
-          LIBGL_ALWAYS_SOFTWARE=1 timeout 90 xvfb-run -a godot --path GodotProject --resolution 960x540 -- --screenshots
-          test -s GodotProject/build/previews/01-road.png
+          LIBGL_ALWAYS_SOFTWARE=1 timeout 90 xvfb-run -a godot --path GodotProject --resolution 960x540 -- --voxel-previews
+          test -s GodotProject/build/previews/voxel-before.png
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: R280-stage03-previews
+          name: R280-voxel01-previews
           path: GodotProject/build/previews/*.png
           if-no-files-found: ignore
       - name: Set up Android command-line tools
@@ -75,11 +78,11 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p GodotProject/build
-          godot --headless --path GodotProject --export-debug Android build/R280-stage03.apk
-          test -s GodotProject/build/R280-stage03.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify GodotProject/build/R280-stage03.apk
+          godot --headless --path GodotProject --export-debug Android build/R280-voxel01.apk
+          test -s GodotProject/build/R280-voxel01.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify GodotProject/build/R280-voxel01.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: R280-stage03-APK
-          path: GodotProject/build/R280-stage03.apk
+          name: R280-voxel01-APK
+          path: GodotProject/build/R280-voxel01.apk
           if-no-files-found: error

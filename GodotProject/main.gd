@@ -183,6 +183,7 @@ func make_ui() -> void:
 	note.text = "Stage 03 · vehicle physics"
 	note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	menu.add_child(note)
+	add_button(menu,"VOXEL LAB",func(): get_tree().change_scene_to_file("res://sandbox.tscn"))
 	panel = HBoxContainer.new()
 	root.add_child(panel)
 	panel.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
