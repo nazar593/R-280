@@ -13,8 +13,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -34,16 +34,24 @@ jobs:
           timeout 90 godot --headless --path GodotProject -- --smoke-test 2>&1 | tee /tmp/smoke.log
           if grep -E 'SCRIPT ERROR|Parse Error' /tmp/smoke.log; then exit 1; fi
           grep -q 'role initialization smoke test complete' /tmp/smoke.log
+      - name: Set up Android command-line tools
+        uses: android-actions/setup-android@v3
       - name: Configure Android SDK and export templates
         run: |
           set -euxo pipefail
           sdk="${ANDROID_HOME:-$ANDROID_SDK_ROOT}"
-          sdkmanager --sdk_root="$sdk" 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+          export ANDROID_HOME="$sdk"
+          export ANDROID_SDK_ROOT="$sdk"
+          echo "ANDROID_HOME=$sdk" >> "$GITHUB_ENV"
+          manager="$(command -v sdkmanager || find "$sdk/cmdline-tools" -type f -name sdkmanager -print -quit)"
+          test -x "$manager"
+          "$manager" --sdk_root="$sdk" 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
           base=https://github.com/godotengine/godot-builds/releases/download/4.5.1-stable
           curl -fL --retry 3 "$base/Godot_v4.5.1-stable_export_templates.tpz" -o /tmp/templates.tpz
           dest="$HOME/.local/share/godot/export_templates/4.5.1.stable"
           mkdir -p "$dest" "$HOME/.config/godot" "$HOME/.android"
           unzip -q -j /tmp/templates.tpz templates/android_debug.apk templates/android_release.apk -d "$dest"
+          rm -f "$HOME/.android/debug.keystore"
           keytool -genkeypair -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -keypass android -dname "CN=Android Debug,O=Android,C=US" -keyalg RSA -keysize 2048 -validity 10000
           printf '[gd_resource type="EditorSettings" format=3]\n\n[resource]\nexport/android/android_sdk_path = "%s"\nexport/android/java_sdk_path = "%s"\nexport/android/debug_keystore = "%s"\n' "$sdk" "$JAVA_HOME" "$HOME/.android/debug.keystore" > "$HOME/.config/godot/editor_settings-4.5.tres"
       - name: Export APK
