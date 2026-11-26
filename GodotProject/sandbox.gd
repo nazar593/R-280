@@ -317,7 +317,7 @@ func reset_world() -> void:
 func smoke_test() -> void:
 	await get_tree().physics_frame
 	var before := grid.get_used_cells().size()
-	erase_patch(Vector3i(0,3,-13))
+	erase_patch(Vector3i(-6,2,-13))
 	await get_tree().physics_frame
 	if removed<=0 or grid.get_used_cells().size()>=before or debris.is_empty():
 		push_error("Voxel removal test failed")
