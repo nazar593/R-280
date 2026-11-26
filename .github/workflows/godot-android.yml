@@ -36,6 +36,9 @@ jobs:
           grep -q 'role initialization smoke test complete' /tmp/smoke.log
       - name: Set up Android command-line tools
         uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-35 build-tools;35.0.0'
+          log-accepted-android-sdk-licenses: 'false'
       - name: Configure Android SDK and export templates
         run: |
           set -euxo pipefail
@@ -45,7 +48,8 @@ jobs:
           echo "ANDROID_HOME=$sdk" >> "$GITHUB_ENV"
           manager="$(command -v sdkmanager || find "$sdk/cmdline-tools" -type f -name sdkmanager -print -quit)"
           test -x "$manager"
-          "$manager" --sdk_root="$sdk" 'platform-tools' 'platforms;android-35' 'build-tools;35.0.0'
+          test -x "$sdk/build-tools/35.0.0/apksigner"
+          test -f "$sdk/platforms/android-35/android.jar"
           base=https://github.com/godotengine/godot-builds/releases/download/4.5.1-stable
           curl -fL --retry 3 "$base/Godot_v4.5.1-stable_export_templates.tpz" -o /tmp/templates.tpz
           dest="$HOME/.local/share/godot/export_templates/4.5.1.stable"
