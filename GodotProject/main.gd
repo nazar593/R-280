@@ -1,6 +1,8 @@
 extends Node3D
 
 const Hud := preload("res://hud.gd")
+const Terrain := preload("res://terrain.gd")
+var landscape: Terrain
 var role := ""
 var vehicle: Node3D
 var car: VehicleBody3D
@@ -40,12 +42,14 @@ func _ready() -> void:
 	camera = Camera3D.new()
 	add_child(camera)
 	camera.current = true
-	camera.far = 650
+	camera.far = 1050
 	camera.position = Vector3(12, 8, -20)
 	camera.look_at(Vector3(0, 1, 0))
 	make_ui()
 	if "--smoke-test" in OS.get_cmdline_user_args():
 		call_deferred("smoke_test")
+	elif "--screenshots" in OS.get_cmdline_user_args():
+		call_deferred("capture_previews")
 
 func smoke_test() -> void:
 	spawn("Pickup")
@@ -55,6 +59,27 @@ func smoke_test() -> void:
 	spawn("Flight")
 	await get_tree().physics_frame
 	print("R280 role initialization smoke test complete")
+	get_tree().quit()
+
+func capture_previews() -> void:
+	var folder := ProjectSettings.globalize_path("res://build/previews")
+	DirAccess.make_dir_recursive_absolute(folder)
+	spawn("Pickup")
+	await get_tree().create_timer(1.0).timeout
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(folder.path_join("01-road.png"))
+	spawn("Flight")
+	drone.position=Vector3(80,48,-70)
+	drone.rotation.y=-0.4
+	seat=1
+	await get_tree().create_timer(1.0).timeout
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(folder.path_join("02-landscape.png"))
+	return_menu()
+	camera.position=Vector3(132,45,36)
+	camera.look_at(Vector3(110,0,80))
+	await RenderingServer.frame_post_draw
+	get_viewport().get_texture().get_image().save_png(folder.path_join("03-village.png"))
 	get_tree().quit()
 
 func mat(c: Color) -> StandardMaterial3D:
@@ -86,27 +111,22 @@ func ground_box(pos: Vector3, dimensions: Vector3, c: Color) -> void:
 	box(body, pos, dimensions, c, true)
 
 func make_world() -> void:
-	ground_box(Vector3(0,-0.55,0), Vector3(600,1,600), Color("#697a50"))
-	ground_box(Vector3(0,-0.025,0), Vector3(9,0.05,560), Color("#3b3d3f"))
-	ground_box(Vector3(9,-0.025,0), Vector3(7,0.05,560), Color("#89765d"))
-	for i in range(-14,15):
-		box(world, Vector3(0,0.015,i*18), Vector3(0.12,0.015,6), Color("#d3ccaf"))
-	for i in range(20):
-		var z := -230.0 + i*24.0
-		box(world,Vector3(-22,1.5,z),Vector3(0.65,3,0.65),Color("#66533e"))
-		var crown := MeshInstance3D.new()
-		var sphere := SphereMesh.new()
-		sphere.radius = 2.1
-		sphere.height = 4.8
-		crown.mesh = sphere
-		crown.material_override = mat(paint)
-		world.add_child(crown)
-		crown.position = Vector3(-22,4.5,z)
-		if i % 4 == 0:
-			ground_box(Vector3(30,2,z),Vector3(6,4,8),Color("#8d8575"))
+	landscape = Terrain.new()
+	world.add_child(landscape)
+	landscape.build()
 	var env := Environment.new()
-	env.background_mode = Environment.BG_COLOR
-	env.background_color = Color("#a0b8c4")
+	env.background_mode = Environment.BG_SKY
+	var sky := Sky.new()
+	var sky_mat := ProceduralSkyMaterial.new()
+	sky_mat.sky_top_color=Color("#547d9e")
+	sky_mat.sky_horizon_color=Color("#b8c6cd")
+	sky_mat.ground_horizon_color=Color("#b8c6cd")
+	sky_mat.ground_bottom_color=Color("#666e64")
+	sky.sky_material=sky_mat
+	env.sky=sky
+	env.fog_enabled=true
+	env.fog_light_color=Color("#aab9c2")
+	env.fog_density=0.0015
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color("#a7b2bd")
 	env.ambient_light_energy = 0.65
@@ -147,7 +167,7 @@ func make_ui() -> void:
 		var label: String = {"Pickup":"MOG / Pickup", "Van":"MOG / Utility van", "Flight":"UAV / Hornet prototype"}[option]
 		add_button(menu,label,spawn.bind(option))
 	var note := Label.new()
-	note.text = "Stage 01 · temporary geometry"
+	note.text = "Stage 02 · open test map"
 	note.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	menu.add_child(note)
 	panel = HBoxContainer.new()
@@ -339,7 +359,7 @@ func _physics_process(dt: float) -> void:
 		drone.velocity = drone.global_transform.basis.z*flight_speed
 		drone.move_and_slide()
 		hud.cross_y = move_toward(hud.cross_y,look.y,dt*2)
-		if drone.position.y < -2:
+		if absf(drone.position.x)>495 or absf(drone.position.z)>495 or drone.position.y < -25:
 			reset_vehicle()
 	else:
 		steering = move_toward(steering,-move.x*0.48,dt*1.5)
@@ -348,7 +368,7 @@ func _physics_process(dt: float) -> void:
 		car.brake = 45 if stopping else 1.5 if abs(move.y)<0.03 else 0.0
 		yaw = clampf(yaw-look.x*dt*1.3*sensitivity,-1.7,1.7)
 		pitch = clampf(pitch-look.y*dt*sensitivity,-0.5,0.6)
-		if car.position.y < -3:
+		if absf(car.position.x)>495 or absf(car.position.z)>495 or car.position.y < -25:
 			reset_vehicle()
 	hud.left_stick = move
 	hud.right_stick = look
@@ -359,7 +379,7 @@ func _process(dt: float) -> void:
 	hud.visible_reticle = role=="Flight" and seat==0
 	hud.queue_redraw()
 	var speed := drone.velocity.length() if role=="Flight" else car.linear_velocity.length()
-	status.text = "%s  |  %d km/h  |  %d m  |  %d FPS%s" % [role,roundi(speed*3.6),roundi(vehicle.position.y),Engine.get_frames_per_second(),"  PAUSED" if is_paused else ""]
+	status.text = "%s | %d km/h | %s | %d FPS%s" % [role,roundi(speed*3.6),landscape.surface_at(vehicle.position.x,vehicle.position.z) if role!="Flight" else ("%d m" % roundi(vehicle.position.y)),Engine.get_frames_per_second()," PAUSED" if is_paused else ""]
 	if is_paused:
 		return
 	var t := vehicle.global_transform

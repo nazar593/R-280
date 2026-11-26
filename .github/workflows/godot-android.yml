@@ -1,4 +1,4 @@
-name: Godot Android Stage 01
+name: Godot Android Stage 02
 on:
   push:
     branches: [godot-stage-01]
@@ -34,6 +34,19 @@ jobs:
           timeout 90 godot --headless --path GodotProject -- --smoke-test 2>&1 | tee /tmp/smoke.log
           if grep -E 'SCRIPT ERROR|Parse Error' /tmp/smoke.log; then exit 1; fi
           grep -q 'role initialization smoke test complete' /tmp/smoke.log
+      - name: Render real in-engine previews
+        continue-on-error: true
+        run: |
+          set -e
+          mkdir -p GodotProject/build/previews
+          LIBGL_ALWAYS_SOFTWARE=1 timeout 90 xvfb-run -a godot --path GodotProject --resolution 960x540 -- --screenshots
+          test -s GodotProject/build/previews/01-road.png
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: R280-stage02-previews
+          path: GodotProject/build/previews/*.png
+          if-no-files-found: ignore
       - name: Set up Android command-line tools
         uses: android-actions/setup-android@v3
         with:
@@ -62,11 +75,11 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p GodotProject/build
-          godot --headless --path GodotProject --export-debug Android build/R280-stage01.apk
-          test -s GodotProject/build/R280-stage01.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify GodotProject/build/R280-stage01.apk
+          godot --headless --path GodotProject --export-debug Android build/R280-stage02.apk
+          test -s GodotProject/build/R280-stage02.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify GodotProject/build/R280-stage02.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: R280-stage01-APK
-          path: GodotProject/build/R280-stage01.apk
+          name: R280-stage02-APK
+          path: GodotProject/build/R280-stage02.apk
           if-no-files-found: error
