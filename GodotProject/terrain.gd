@@ -113,7 +113,7 @@ func road_strip(center: float,width: float,along_z: bool,c: Color) -> void:
 	if center==50:
 		return
 	for side in [-1,1]:
-		var edge := center+side*(width*0.5+0.35)
+		var edge: float = center+side*(width*0.5+0.35)
 		var edge_pos := Vector3(edge,0.025,0) if along_z else Vector3(0,0.035,edge)
 		var edge_dim := Vector3(0.7,0.018,990) if along_z else Vector3(990,0.018,0.7)
 		block(edge_pos,edge_dim,Color("#918a72"))
@@ -192,7 +192,7 @@ func make_village() -> void:
 	for side in [-1,1]:
 		for i in range(5):
 			var x := 73.0+i*22.0
-			var z := 80.0+side*17
+			var z: float = 80.0+side*17
 			var y := elevation(x,z)
 			var wall := Color("#c3b69e") if i%2==0 else Color("#a28f79")
 			block(Vector3(x,y+1.7,z),Vector3(8,3.4,6),wall,true)

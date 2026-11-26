@@ -76,6 +76,7 @@ func capture_previews() -> void:
 	await RenderingServer.frame_post_draw
 	get_viewport().get_texture().get_image().save_png(folder.path_join("02-landscape.png"))
 	return_menu()
+	menu.hide()
 	camera.position=Vector3(132,45,36)
 	camera.look_at(Vector3(110,0,80))
 	await RenderingServer.frame_post_draw
