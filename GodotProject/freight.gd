@@ -1,8 +1,12 @@
 extends RefCounted
 
-const DARK := Color("#2b3131")
-const GLASS := Color("#42616a")
-const RUBBER := Color("#222626")
+const TRACTOR := preload("res://art/fleet/tractor.glb")
+const FREIGHT_BODY := [
+	preload("res://art/fleet/trailer_curtain.glb"),
+	preload("res://art/fleet/trailer_cold.glb"),
+	preload("res://art/fleet/trailer_tank.glb"),
+	preload("res://art/fleet/truck_box.glb")
+]
 var road: Node3D
 var root: AnimatableBody3D
 var rear: AnimatableBody3D
@@ -39,20 +43,13 @@ func build(terrain: Node3D,parent: Node3D,at: float,dir: float,kind: int,id: int
 	parent.add_child(root)
 	root.set_meta("freight",self)
 	root.set_meta("zone","cab")
-	var cab: Color = [Color("#ddd8c7"),Color("#a25d44"),Color("#537786")][id%3]
-	road.block(root,Vector3(0,.7,0),Vector3(1.96,.36,5.78),DARK)
+	var cab := TRACTOR.instantiate() as Node3D
+	root.add_child(cab)
+	var paint: Color = [Color("#ddd8c7"),Color("#a25d44"),Color("#537786")][id%3]
+	for panel in cab.find_children("*","MeshInstance3D",true,false):
+		if String(panel.name).ends_with("_TruckPaint"):
+			panel.material_override = road.mat(paint)
 	box_shape(root,Vector3(0,1.75,1.4),Vector3(2.43,2.43,2.3))
-	road.block(root,Vector3(0,1.75,1.4),Vector3(2.43,2.43,2.3),cab)
-	road.block(root,Vector3(0,2.41,2.574),Vector3(2.12,.62,.045),GLASS)
-	road.block(root,Vector3(0,1.24,2.57),Vector3(1.63,.45,.10),DARK)
-	road.block(root,Vector3(0,.85,2.62),Vector3(2.47,.23,.17),Color("#9da49f"))
-	for side in [-1,1]:
-		road.block(root,Vector3(side*1.228,2.39,1.54),Vector3(.045,.60,1.36),GLASS)
-		road.block(root,Vector3(side*1.39,2.42,2.36),Vector3(.16,.39,.17),DARK)
-		road.block(root,Vector3(side*1.17,.80,.43),Vector3(.18,.21,.57),Color("#666e70"))
-		road.block(root,Vector3(side*1.23,1.42,1.50),Vector3(.049,.075,.38),DARK)
-		road.block(root,Vector3(side*1.258,.79,-1.84),Vector3(.075,.52,.11),DARK)
-		road.block(root,Vector3(side*.95,1.13,2.589),Vector3(.37,.22,.10),Color("#e6d4a3"))
 	var carrier := root
 	if not rigid:
 		rear = AnimatableBody3D.new()
@@ -62,35 +59,11 @@ func build(terrain: Node3D,parent: Node3D,at: float,dir: float,kind: int,id: int
 		carrier = rear
 	cargo = Node3D.new()
 	carrier.add_child(cargo)
+	var model: PackedScene = FREIGHT_BODY[kind]
+	cargo.add_child(model.instantiate())
 	var z := -1.94 if rigid else -4.64
 	var span := 4.25 if rigid else 9.24
-	if rigid:
-		box_shape(root,Vector3(0,1.93,z),Vector3(2.4,2.05,span))
-	else:
-		box_shape(rear,Vector3(0,1.93,z),Vector3(2.4,2.10,span))
-		road.block(rear,Vector3(0,.76,z),Vector3(2.39,.22,span),DARK)
-	if kind == 2:
-		var tank := wheel_mesh(1.10,span*.98,Color("#c0c0b5"))
-		cargo.add_child(tank)
-		tank.position = Vector3(0,1.95,z)
-		tank.rotation.x = PI*.5
-		for j in [-1,0,1]:
-			var band := wheel_mesh(1.12,.12,Color("#656f70"))
-			cargo.add_child(band)
-			band.position = Vector3(0,1.95,z+j*2.86)
-			band.rotation.x = PI*.5
-	else:
-		var color := Color("#718481") if kind == 0 else Color("#d6d9d0")
-		road.block(cargo,Vector3(0,1.99,z),Vector3(2.45,2.20,span),color)
-		road.block(cargo,Vector3(0,3.10,z),Vector3(2.49,.09,span),Color("#abb1a7"))
-		road.block(cargo,Vector3(0,2,z-span*.5-.029),Vector3(.075,2.07,.055),DARK)
-		for j in 7:
-			for side in [-1,1]:
-				road.block(cargo,Vector3(side*1.225,1.97,z+(j/7.0-.42)*span),Vector3(.049,2.03,.056),color.darkened(.13))
-		if kind == 1:
-			road.block(cargo,Vector3(0,2.65,z+span*.5),Vector3(1.04,.53,.26),DARK)
-	for x in [-.99,.99]:
-		road.block(cargo,Vector3(x,.91,z-span*.5-.035),Vector3(.24,.18,.12),Color("#b64130"))
+	box_shape(carrier,Vector3(0,1.93,z),Vector3(2.4,2.1,span))
 	for axle in [1.65,-1.30]:
 		add_axle(root,axle)
 	if rear:
@@ -108,18 +81,6 @@ func add_axle(parent: Node3D,z: float) -> void:
 		axle.position = Vector3(side*1.225,.47,z)
 		var tire := preload("res://fleet.gd").tire(road,axle,side,.47,.32,false)
 		tires.append(tire)
-
-func wheel_mesh(radius: float,width: float,color: Color) -> MeshInstance3D:
-	var mesh := CylinderMesh.new()
-	mesh.top_radius = radius
-	mesh.bottom_radius = radius
-	mesh.height = width
-	mesh.radial_segments = 14
-	mesh.rings = 1
-	var node := MeshInstance3D.new()
-	node.mesh = mesh
-	node.material_override = road.mat(color)
-	return node
 
 func box_shape(parent: CollisionObject3D,center: Vector3,dimensions: Vector3) -> void:
 	var collider := CollisionShape3D.new()

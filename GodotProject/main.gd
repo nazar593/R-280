@@ -365,7 +365,7 @@ func start(which: String) -> void:
 	arena.add_child(ai)
 	ai.transform = spawn
 	if role=="recon":
-		Fleet.hull(road,ai,van,profile)
+		Fleet.hull(ai,van,profile)
 		for x in [-.91,.91]:
 			for z in [-1.51,1.51]:
 				var wheel := Fleet.tire(road,ai,signf(x),Fleet.TIRE_RADIUS,.27,false)
@@ -1126,7 +1126,42 @@ func capture() -> void:
 	toggle_map()
 	await get_tree().create_timer(.2).timeout
 	await save_frame(folder,"05-tablet.png")
+	await capture_model_views(folder)
 	get_tree().quit()
+
+func capture_model_views(folder: String) -> void:
+	return_menu()
+	menu.hide()
+	arena = Node3D.new()
+	add_child(arena)
+	var turnout := road.pose(road.plan.start+28)
+	for i in 2:
+		var frame := Node3D.new()
+		arena.add_child(frame)
+		frame.transform = turnout.translated_local(Vector3(-2.7+i*4.6,0,0))
+		Fleet.hull(frame,i==1,i)
+		for side in [-1.0,1.0]:
+			for axle in [1.55,-1.51]:
+				var tire := Fleet.tire(road,frame,side,Fleet.TIRE_RADIUS,.27)
+				tire.position = Vector3(side*Fleet.TRACK_HALF,Fleet.TIRE_RADIUS,axle)
+	camera.position = turnout*Vector3(7.5,4.0,9.1)
+	camera.look_at(turnout*Vector3(-.35,1.15,0))
+	await get_tree().process_frame
+	await save_frame(folder,"06-pickup-van.png")
+	for actor in arena.get_children(): actor.queue_free()
+	await get_tree().process_frame
+	for kind in 4:
+		var prop := truck(road.plan.start+30+kind*23,1.0,kind,kind,false)
+		var position := turnout*Vector3((kind-1.5)*3.62,0,kind%2*1.15)
+		position.y = maxf(.10,road.terrain_height(position.x,position.z))
+		var pose := Transform3D(turnout.basis,position)
+		prop.root.transform = pose
+		if prop.rear:
+			prop.rear.transform = pose.translated_local(Vector3(0,0,-1.85))
+	camera.position = turnout*Vector3(13.8,8.6,11.9)
+	camera.look_at(turnout*Vector3(0,1.4,-4.5))
+	await get_tree().process_frame
+	await save_frame(folder,"07-trucks.png")
 
 
 func record_gameplay() -> void:
