@@ -6,6 +6,8 @@ var plan: Dictionary
 var curve := Curve3D.new()
 var length := 0.0
 var points := PackedVector3Array()
+var arc_lengths := PackedFloat32Array()
+var ground_noise := FastNoiseLite.new()
 var materials := {}
 
 func build() -> void:
@@ -20,6 +22,11 @@ func build() -> void:
 	curve.bake_interval = 3.0
 	length = curve.get_baked_length()
 	points = curve.get_baked_points()
+	arc_lengths.resize(points.size())
+	for i in range(1,points.size()):
+		arc_lengths[i] = arc_lengths[i-1]+points[i-1].distance_to(points[i])
+	ground_noise.seed = 280
+	ground_noise.frequency = .012
 	ground()
 	ribbon("Асфальт", -4.15,4.15,0.0, Color("#3f4344"),true)
 	ribbon("Гравий слева",-5.5,-4.15,-0.03,Color("#877e63"),true)
@@ -54,7 +61,17 @@ func nearest(p: Vector3) -> float:
 		if delta < distance:
 			best = i
 			distance = delta
-	return float(best)/maxf(1,points.size()-1)*length
+	var nearest_length := arc_lengths[best]
+	for start in range(maxi(0,best-1),mini(points.size()-1,best+1)):
+		var a := Vector2(points[start].x,points[start].z)
+		var b := Vector2(points[start+1].x,points[start+1].z)
+		var span := b-a
+		var fraction := clampf((flat-a).dot(span)/maxf(.0001,span.length_squared()),0,1)
+		var segment_distance := flat.distance_squared_to(a+fraction*span)
+		if segment_distance <= distance:
+			distance = segment_distance
+			nearest_length = lerpf(arc_lengths[start],arc_lengths[start+1],fraction)
+	return nearest_length
 
 func surface_at(x: float,z: float) -> String:
 	var point := Vector3(x,0,z)
@@ -93,10 +110,23 @@ func solid(p: Vector3, dimensions: Vector3, color: Color, facing := Basis.IDENTI
 	collider.shape = shape
 	body.add_child(collider)
 
+func height_sample(x: float,z: float) -> float:
+	var center := at(nearest(Vector3(x,0,z)))
+	var dist := Vector2(x-center.x,z-center.z).length()
+	return .02+smoothstep(15,67,dist)*(ground_noise.get_noise_2d(x,z)*11-4)
+
+func terrain_height(x: float,z: float) -> float:
+	var x0 := floorf((x+420)/20)*20-420
+	var z0 := floorf((z+670)/20)*20-670
+	var u := (x-x0)/20
+	var v := (z-z0)/20
+	var right := height_sample(x0+20,z0)
+	var top := height_sample(x0,z0+20)
+	if u+v<=1:
+		return height_sample(x0,z0)*(1-u-v)+right*u+top*v
+	return height_sample(x0+20,z0+20)*(u+v-1)+right*(1-v)+top*(1-u)
+
 func ground() -> void:
-	var noise := FastNoiseLite.new()
-	noise.seed = 280
-	noise.frequency = 0.012
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	st.set_smooth_group(0)
@@ -104,11 +134,8 @@ func ground() -> void:
 		for x in range(-420,460,20):
 			for offset in [Vector2i.ZERO,Vector2i(20,0),Vector2i(0,20),Vector2i(20,0),Vector2i(20,20),Vector2i(0,20)]:
 				var p := Vector3(x+offset.x,0,z+offset.y)
-				var center := at(nearest(p))
-				var dist := Vector2(p.x-center.x,p.z-center.z).length()
-				var edge := smoothstep(15,67,dist)
-				p.y = 0.02 + edge*(noise.get_noise_2d(p.x,p.z)*11.0-4.0)
-				var shade := 0.5+noise.get_noise_2d(p.x+45,p.z+20)*0.5
+				p.y = height_sample(p.x,p.z)
+				var shade := 0.5+ground_noise.get_noise_2d(p.x+45,p.z+20)*0.5
 				st.set_color(Color("#73744e").lerp(Color("#535941"),shade))
 				st.add_vertex(p)
 	st.index()
@@ -170,8 +197,9 @@ func roadside() -> void:
 		for side in [-1,1]:
 			var p := at(d,side*rng.randf_range(16,35))
 			var h := rng.randf_range(3.8,7.5)
-			trunks.append(Transform3D(Basis.from_scale(Vector3(0.26,h*0.60,0.26)),Vector3(p.x,h*0.26-0.3,p.z)))
-			crowns.append(Transform3D(Basis.from_scale(Vector3(h*0.52,h*0.76,h*0.63)),Vector3(p.x,h*0.68-0.2,p.z)))
+			p.y = terrain_height(p.x,p.z)
+			trunks.append(Transform3D(Basis.from_scale(Vector3(0.26,h*0.60,0.26)),p+Vector3.UP*(h*0.28)))
+			crowns.append(Transform3D(Basis.from_scale(Vector3(h*0.52,h*0.76,h*0.63)),p+Vector3.UP*(h*0.68)))
 		if road.origin.y>1.6:
 			var p := road.origin
 			if d%3 == 0:

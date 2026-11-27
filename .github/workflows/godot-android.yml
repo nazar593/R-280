@@ -85,7 +85,11 @@ jobs:
         run: |
           set -e
           LIBGL_ALWAYS_SOFTWARE=1 timeout 150 xvfb-run -a godot --path GodotProject --resolution 960x540 --fixed-fps 24 --write-movie "$PWD/GodotProject/build/previews/play.avi" -- --record-gameplay
-          ffmpeg -hide_banner -loglevel error -y -i GodotProject/build/previews/play.avi -c:v libx264 -pix_fmt yuv420p -c:a aac -movflags +faststart GodotProject/build/previews/gameplay.mp4
+          if command -v ffmpeg >/dev/null; then
+            ffmpeg -hide_banner -loglevel error -y -i GodotProject/build/previews/play.avi -c:v libx264 -pix_fmt yuv420p -c:a aac -movflags +faststart GodotProject/build/previews/gameplay.mp4
+          else
+            mv GodotProject/build/previews/play.avi GodotProject/build/previews/gameplay.avi
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -93,4 +97,5 @@ jobs:
           path: |
             GodotProject/build/previews/*.png
             GodotProject/build/previews/gameplay.mp4
+            GodotProject/build/previews/gameplay.avi
           if-no-files-found: ignore

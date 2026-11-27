@@ -838,8 +838,8 @@ func smoke_test() -> void:
 	left = Vector2.UP
 	for i in 170: await get_tree().physics_frame
 	var speed := car.linear_velocity.length()
-	print("R280 pickup speed ",speed,"; wheels ",drivetrain.contact_count,"; trucks ",convoy.size(),"; displaced ",car.position.distance_to(road.at(road.plan.start,road.LANE)))
-	if speed<1 or drivetrain.contact_count<2 or convoy.size()!=10:
+	print("R280 pickup speed ",speed,"; wheels ",drivetrain.contact_count,"; trucks ",convoy.size(),"; surface ",drivetrain.surface,"; displaced ",car.position.distance_to(road.at(road.plan.start,road.LANE)))
+	if speed<1 or drivetrain.contact_count<2 or convoy.size()!=10 or drivetrain.surface!="ASPHALT":
 		push_error("Vehicle dynamics or traffic failed")
 		get_tree().quit(1)
 		return
