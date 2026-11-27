@@ -25,7 +25,11 @@ static func hull(terrain: Node3D,parent: Node3D,van: bool,profile: int) -> Node3
 			terrain.block(parent,Vector3(side*.972,1.68,1.20),Vector3(.05,.43,1.20),GLASS)
 			terrain.block(parent,Vector3(side*.68,1.13,2.24),Vector3(.24,.23,.045),Color("#e4d9ae"))
 	else:
-		parent.add_child(PICKUP.instantiate())
+		var pickup := PICKUP.instantiate() as Node3D
+		parent.add_child(pickup)
+		for part in pickup.find_children("*","MeshInstance3D",true,false):
+			if "chassis" in String(part.name).to_lower():
+				part.material_override = terrain.mat(OLIVE)
 	var pivot := Node3D.new()
 	parent.add_child(pivot)
 	pivot.position = Vector3(0,1.16,-1.04)
@@ -74,6 +78,14 @@ static func tire(terrain: Node3D,parent: Node3D,side: float,radius: float,width:
 		terrain.block(wheel,center,Vector3(.035,.046,.046),Color("#343a3e"))
 	return wheel
 
+static func wheel_arch(terrain: Node3D,body: Node3D,side: float,z: float) -> void:
+	var radius := .49
+	for i in 9:
+		var angle := lerpf(.07,PI-.07,i/8.0)
+		var position := Vector3(side*1.025,.245+sin(angle)*radius,z+cos(angle)*radius)
+		var segment: MeshInstance3D = terrain.block(body,position,Vector3(.30,.077,.19),DARK)
+		segment.rotation.x = angle-PI*.5
+
 static func player(terrain: Node3D,parent: Node3D,spawn: Transform3D,van: bool,profile: int) -> Dictionary:
 	var car := VehicleBody3D.new()
 	parent.add_child(car)
@@ -100,6 +112,10 @@ static func player(terrain: Node3D,parent: Node3D,spawn: Transform3D,van: bool,p
 		# Godot registers the suspension connection at tree entry.
 		car.add_child(wheel)
 		tire(terrain,wheel,side,TIRE_RADIUS,.27)
+		wheel_arch(terrain,body,side,wheel.position.z)
+	for i in 2:
+		var beam: MeshInstance3D = terrain.block(car,Vector3.ZERO,Vector3.ONE,DARK)
+		beam.name = "VisibleAxle%d" % i
 	return {"body":car,"gun":gun}
 
 static func aircraft(parent: Node3D) -> Dictionary:

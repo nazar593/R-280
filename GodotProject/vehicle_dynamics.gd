@@ -3,6 +3,7 @@ extends RefCounted
 # Fictional game tuning. These are not measured vehicle specifications.
 var body: VehicleBody3D
 var wheels: Array[VehicleWheel3D]=[]
+var axle_meshes: Array[MeshInstance3D] = []
 var is_van := false
 var throttle := 0.0
 var steering := 0.0
@@ -37,6 +38,8 @@ func configure(car: VehicleBody3D,van: bool) -> void:
 			wheel.damping_relaxation=4.8 if van else 4.4
 			wheel.suspension_max_force=12000.0
 			wheel.wheel_friction_slip=3.0
+	for i in 2:
+		axle_meshes.append(body.get_node("VisibleAxle%d" % i) as MeshInstance3D)
 
 func step(dt: float,move: Vector2,stop: bool,terrain: Node3D, wet := false) -> void:
 	var forward := body.global_transform.basis.z.normalized()
@@ -51,9 +54,13 @@ func step(dt: float,move: Vector2,stop: bool,terrain: Node3D, wet := false) -> v
 	var steer_limit := lerpf(0.52,0.16,smoothstep(3.0,24.0,speed))
 	steering=move_toward(steering,-move.x*steer_limit,dt*1.15)
 	body.steering=steering
-	for axle in [0,2]:
-		var left := wheels[axle]
-		var right := wheels[axle+1]
+	for axle in 2:
+		var left := wheels[axle*2]
+		var right := wheels[axle*2+1]
+		var span := right.position-left.position
+		axle_meshes[axle].transform = Transform3D(
+			Basis.looking_at(span,Vector3.UP).scaled_local(Vector3(.15,.13,span.length())),
+			left.position.lerp(right.position,.5))
 		if left.is_in_contact() and right.is_in_contact():
 			var travel := (left.position.y-right.position.y)*body.mass*5.75
 			var up := body.global_basis.y
