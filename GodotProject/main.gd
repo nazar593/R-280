@@ -5,6 +5,7 @@ const Terrain := preload("res://terrain.gd")
 const Dynamics := preload("res://vehicle_dynamics.gd")
 const Fleet := preload("res://fleet.gd")
 const Freight := preload("res://freight.gd")
+const HORNET_CRUISE := 22.0
 const LOADOUTS := ["2 × 12,7","20 мм","23 мм"]
 const SKY := [Color("#a8bdc9"),Color("#c8a58b"),Color("#26374c")]
 const RETICLE := Color("#87f2a0")
@@ -56,6 +57,9 @@ var daylight: Button
 var quality_choice: Button
 var camera_button: Button
 var target_button: Button
+var fire_button_held := false
+var fire_tap := false
+var fire_touch := -1
 var drone_mode_button: Button
 var strike_mode := true
 var strike: Dictionary = {}
@@ -293,7 +297,13 @@ func make_ui() -> void:
 	task = label("",14)
 	task.modulate = AMBER
 	readout.add_child(task)
-	target_button = button(root,"Метка",action)
+	target_button = button(root,"Метка",func():
+		if drone: action())
+	target_button.button_down.connect(func():
+		if can_fire_mog():
+			fire_button_held = true
+			fire_tap = true)
+	target_button.button_up.connect(func(): fire_button_held = false)
 	target_button.set_anchors_and_offsets_preset(Control.PRESET_CENTER_RIGHT)
 	target_button.offset_left = -113
 	target_button.offset_right = -13
@@ -316,7 +326,7 @@ func start(which: String) -> void:
 	redeploy = 0
 	mark_until = 0
 	yaw = 0
-	pitch = .16
+	pitch = 0.0 if which=="recon" else .16
 	recoil = 0
 	seat = 0
 	arena = Node3D.new()
@@ -419,6 +429,7 @@ func dispose() -> void:
 	reset_input()
 
 func reset_input() -> void:
+	clear_fire_input()
 	left_id = -1
 	look_id = -1
 	lift_id = -1
@@ -451,6 +462,7 @@ func toggle_map() -> void:
 
 func toggle_seat() -> void:
 	if active and car:
+		clear_fire_input()
 		seat = 0 if seat==2 else 2
 		yaw = 0
 		pitch = .04 if seat==2 else .16
@@ -461,9 +473,34 @@ func toggle_drone_mode() -> void:
 
 func toggle_camera() -> void:
 	if active and rig:
+		clear_fire_input()
 		seat = 1 if seat==0 else 0
-		yaw = 0
-		pitch = .16
+		if not drone:
+			yaw = 0
+			pitch = .16
+
+func can_fire_mog() -> bool:
+	return active and not map_visible and car!=null and seat==2
+
+func clear_fire_input() -> void:
+	fire_button_held = false
+	fire_tap = false
+	fire_touch = -1
+
+func _input(event: InputEvent) -> void:
+	if event is InputEventScreenTouch:
+		if event.pressed and fire_touch==-1 and can_fire_mog() and target_button.visible \
+				and target_button.get_global_rect().has_point(event.position):
+			fire_touch = event.index
+			fire_tap = true
+			get_viewport().set_input_as_handled()
+		elif not event.pressed and event.index==fire_touch:
+			fire_touch = -1
+			get_viewport().set_input_as_handled()
+
+func _notification(what: int) -> void:
+	if what==NOTIFICATION_APPLICATION_FOCUS_OUT:
+		clear_fire_input()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not active:
@@ -473,7 +510,9 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_TAB: toggle_map()
 			KEY_V: toggle_camera()
 			KEY_C: toggle_seat()
-			KEY_F: action()
+			KEY_F:
+				if drone: action()
+				elif can_fire_mog(): fire_tap = true
 			KEY_G: toggle_drone_mode()
 			KEY_R: reset_role()
 			KEY_ESCAPE:
@@ -527,12 +566,18 @@ func _physics_process(dt: float) -> void:
 		movement = (left+Vector2(axis(KEY_A,KEY_D),axis(KEY_W,KEY_S))).limit_length()
 		aim = (look_touch+Vector2(axis(KEY_LEFT,KEY_RIGHT),axis(KEY_UP,KEY_DOWN))).limit_length()
 	yaw = wrapf(yaw-aim.x*dt*1.65,-PI,PI)
+	if drone and not map_visible and strike.is_empty() and redeploy<=0:
+		yaw = wrapf(yaw-movement.x*dt*.95,-PI,PI)
+		aim.y -= clampf(lift+axis(KEY_Q,KEY_E),-1,1)*.65
 	pitch = clampf(pitch+aim.y*dt*1.25,-.65,.75)
 	recoil *= exp(-dt*14)
 	if car:
 		drivetrain.step(dt,movement if seat!=2 else Vector2.ZERO,seat==2 or lift<0 or Input.is_physical_key_pressed(KEY_SPACE),road,wet)
 		turret.rotation.y = yaw if seat==2 else 0.0
 		escort_motor.pitch_scale = .76+minf(drivetrain.speed_kmh/110,.61)
+		if can_fire_mog() and (fire_tap or fire_button_held or fire_touch>=0 or Input.is_physical_key_pressed(KEY_F)):
+			fire_tap = false
+			action()
 	elif drone:
 		step_drone(dt,movement)
 	step_shots(dt)
@@ -546,6 +591,10 @@ func ray(start_at: Vector3,end_at: Vector3) -> Dictionary:
 		query.exclude = [rig.get_rid()]
 	return get_world_3d().direct_space_state.intersect_ray(query)
 
+func hornet_forward() -> Vector3:
+	var heading := Vector3(sin(yaw),0,cos(yaw))
+	return heading*cos(pitch)-Vector3.UP*sin(pitch)
+
 func step_drone(dt: float,move: Vector2) -> void:
 	if not strike.is_empty() or redeploy>0:
 		step_strike(dt)
@@ -557,13 +606,15 @@ func step_drone(dt: float,move: Vector2) -> void:
 	signal_strength = move_toward(signal_strength,desired,dt*.94)
 	if signal_strength>.34:
 		last_fix = drone.position
-	var local := Vector3(-move.x*11,(lift+axis(KEY_Q,KEY_E))*6,-move.y*27)
-	var target_velocity := Basis(Vector3.UP,yaw)*local
+	var speed := HORNET_CRUISE-clampf(move.y,-1,1)*7.0
+	var target_velocity := hornet_forward()*speed
 	if signal_strength<.13 or battery<.04:
 		var point := last_fix.move_toward(relay,30)+Vector3.UP*11
 		target_velocity = ((point-drone.position)*1.13).limit_length(21)
 		if target_velocity.length()>2:
 			yaw = lerp_angle(yaw,atan2(target_velocity.x,target_velocity.z),dt*2.1)
+			var horizontal := Vector2(target_velocity.x,target_velocity.z).length()
+			pitch = lerpf(pitch,-atan2(target_velocity.y,horizontal),minf(1,dt*2.1))
 	if drone.position.y<4.0:
 		target_velocity.y = maxf(2.8,target_velocity.y)
 	if drone.position.y>116:
@@ -575,8 +626,8 @@ func step_drone(dt: float,move: Vector2) -> void:
 	drone.rotation.y = yaw
 	drone.move_and_slide()
 	battery = maxf(0,battery-dt*(.0012+target_velocity.length()*.000044))
-	drone_skin.rotation.x = lerpf(drone_skin.rotation.x,local.z*.008,dt*5)
-	drone_skin.rotation.z = lerpf(drone_skin.rotation.z,-local.x*.022,dt*5)
+	drone_skin.rotation.x = lerpf(drone_skin.rotation.x,pitch,dt*5)
+	drone_skin.rotation.z = lerpf(drone_skin.rotation.z,(move.x+look_touch.x)*.16,dt*5)
 	rotor.rotate_z(dt*52)
 	drone_motor.pitch_scale = .77+minf(.55,drone.velocity.length()/60)
 
@@ -716,7 +767,7 @@ func step_strike(dt: float) -> void:
 			drone.transform = insertion.translated_local(Vector3(0,22,0))
 			drone.velocity = Vector3.ZERO
 			yaw = drone.rotation.y
-			pitch = .16
+			pitch = 0.0
 			battery = 1.0
 			signal_strength = 1.0
 			drone_motor.play()
@@ -847,14 +898,15 @@ func _process(dt: float) -> void:
 	var forward := rig.global_basis.z.rotated(Vector3.UP,yaw if car else 0.0)
 	var look := (forward*cos(pitch)-Vector3.UP*sin(pitch-recoil*.07)).normalized()
 	if drone:
+		look = hornet_forward()
 		drone_skin.visible = seat==1 and redeploy<=0
 		if redeploy>0.0:
 			camera.position = strike_destination+Vector3(7,4,-9)
 			camera.look_at(strike_destination)
 		elif seat==1:
-			var p := drone.position-forward*6.8+Vector3.UP*2.35
+			var p := drone.position-look*6.8+Vector3.UP*1.6
 			camera.position = camera.position.lerp(p,1.0-exp(-dt*9.0))
-			camera.look_at(drone.position)
+			camera.look_at(camera.position+look)
 		else:
 			camera.position = drone.position+forward*.78
 			camera.look_at(camera.position+look)
@@ -878,7 +930,7 @@ func update_ui() -> void:
 	hud.controls_visible = active and not map_visible
 	hud.visible_reticle = active and drone!=null and seat==0 and not map_visible
 	hud.gun_reticle = active and car!=null and seat==2 and not map_visible
-	hud.cross_y = clampf((pitch-.16)*1.26,-.92,.92)
+	hud.cross_y = 0.0 if drone else clampf((pitch-.16)*1.26,-.92,.92)
 	hud.tablet = map_visible
 	hud.role = role
 	hud.attack = strike_mode and drone!=null and redeploy<=0
@@ -958,13 +1010,43 @@ func smoke_test() -> void:
 		push_error("Gunner selection or separate damage failed")
 		get_tree().quit(1)
 		return
+	pitch = -.28
+	await get_tree().process_frame
+	target_button.button_down.emit()
+	for i in 24: await get_tree().physics_frame
+	target_button.button_up.emit()
+	if shots.size()<2:
+		push_error("Held MOG fire failed")
+		get_tree().quit(1)
+		return
+	var fire_press := InputEventScreenTouch.new()
+	fire_press.index = 4
+	fire_press.position = target_button.get_global_rect().get_center()
+	fire_press.pressed = true
+	_input(fire_press)
+	var fire_release := InputEventScreenTouch.new()
+	fire_release.index = 4
+	fire_release.position = Vector2.ZERO
+	_input(fire_release)
+	if fire_touch!=-1 or not fire_tap:
+		push_error("Touch firing did not retain a quick tap or clear on release outside the button")
+		get_tree().quit(1)
+		return
 	start("recon")
 	for i in 10: await get_tree().physics_frame
 	var airplane := drone.position
-	left=Vector2.UP
 	for i in 92: await get_tree().physics_frame
-	if drone.position.distance_to(airplane)<3 or signal_strength<.5:
-		push_error("Drone motion or initial link failed")
+	if drone.position.distance_to(airplane)<12 or signal_strength<.5:
+		push_error("Automatic Hornet cruise without stick movement failed")
+		get_tree().quit(1)
+		return
+	yaw += .84
+	pitch = -.29
+	toggle_camera()
+	var expected := hornet_forward()
+	for i in 94: await get_tree().physics_frame
+	if drone.velocity.normalized().dot(expected)<.95 or (-camera.global_basis.z).dot(expected)<.99:
+		push_error("Hornet flight did not follow the camera after turning")
 		get_tree().quit(1)
 		return
 	drone.position = Vector3(710,75,-550)
@@ -1015,7 +1097,7 @@ func smoke_test() -> void:
 		return
 	print("R280 role initialization smoke test complete")
 	dispose()
-	await get_tree().process_frame
+	await get_tree().create_timer(.2).timeout
 	get_tree().quit()
 
 func save_frame(folder: String,name: String) -> void:
