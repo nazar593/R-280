@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 from mathutils import Vector
 
-output, source = map(Path, sys.argv[sys.argv.index("--") + 1:])
+output, source = map(Path, sys.argv[sys.argv.index("--") + 1:][:2])
 output.mkdir(parents=True, exist_ok=True)
 source.parent.mkdir(parents=True, exist_ok=True)
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -348,11 +348,13 @@ def display_mount(index):
         bar("Rear handle",(x,.78,-.28),(x,.66,-.48),.052,steel)
 
 TAU=math.tau
-pickup(); van(); tractor()
-for kind in ['curtain','cold','tank','rigid']: trailer(kind)
+files=[]
+if "--mounts-only" not in sys.argv:
+    pickup(); van(); tractor()
+    for kind in ['curtain','cold','tank','rigid']: trailer(kind)
+    files.extend(['hilux','bukhanka','tractor','trailer_curtain','trailer_cold','trailer_tank','truck_box'])
 for i in range(3): display_mount(i)
-
-files=['hilux','bukhanka','tractor','trailer_curtain','trailer_cold','trailer_tank','truck_box','mount_twin','mount_single','mount_heavy']
+files.extend(['mount_twin','mount_single','mount_heavy'])
 for coll,key in zip(fleet,files):
     # Godot uses one drawable surface per material here; keep the individual panels
     # and details in the .blend file, and export a compact merged copy.
@@ -364,7 +366,10 @@ for coll,key in zip(fleet,files):
         for modifier in list(obj.modifiers):
             bpy.ops.object.modifier_apply(modifier=modifier.name)
     groups={}
-    for obj in copies: groups.setdefault(obj.data.materials[0].name,[]).append(obj)
+    elevates=("Side receiver cap","Fictional receiver shell","Receiver top plate","Exterior","Rear handle")
+    for obj in copies:
+        section="Elevating_" if key.startswith("mount_") and obj.name.startswith(elevates) else ""
+        groups.setdefault(section+obj.data.materials[0].name,[]).append(obj)
     outputs=[]
     for name,group in groups.items():
         bpy.ops.object.select_all(action='DESELECT')
@@ -385,6 +390,8 @@ for coll,key in zip(fleet,files):
 # Separate the editable assets into a studio-style layout when someone opens the source.
 placements=[(-5.4,0,0),(-1.9,0,0),(2.2,0,0),(6.5,3.4,0),(10.0,3.4,0),
             (13.5,3.4,0),(16.8,1.2,0),(-5.4,-4.3,.10),(-3.8,-4.3,.10),(-2.2,-4.3,.10)]
+if "--mounts-only" in sys.argv:
+    placements=placements[-3:]
 for coll,where in zip(fleet,placements):
     root=bpy.data.objects.new(coll.name+" | assembly",None)
     coll.objects.link(root)

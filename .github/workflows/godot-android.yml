@@ -65,13 +65,13 @@ jobs:
         run: |
           set -euxo pipefail
           mkdir -p GodotProject/build
-          godot --headless --path GodotProject --export-debug Android build/Roadline-P280-Godot-v011.apk
-          test -s GodotProject/build/Roadline-P280-Godot-v011.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify GodotProject/build/Roadline-P280-Godot-v011.apk
+          godot --headless --path GodotProject --export-debug Android build/Roadline-P280-Godot-v012.apk
+          test -s GodotProject/build/Roadline-P280-Godot-v012.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify GodotProject/build/Roadline-P280-Godot-v012.apk
       - uses: actions/upload-artifact@v4
         with:
           name: Roadline-P280-Godot-APK
-          path: GodotProject/build/Roadline-P280-Godot-v011.apk
+          path: GodotProject/build/Roadline-P280-Godot-v012.apk
           if-no-files-found: error
       - name: Render real in-engine previews
         continue-on-error: true

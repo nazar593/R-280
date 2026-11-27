@@ -22,6 +22,7 @@ var drone: CharacterBody3D
 var drone_skin: Node3D
 var rotor: Node3D
 var turret: Node3D
+var ai_turret: Node3D
 var ai: Node3D
 var primary: Freight
 var convoy: Array[Freight] = []
@@ -62,10 +63,11 @@ var fire_tap := false
 var fire_touch := -1
 var drone_mode_button: Button
 var strike_mode := true
-var strike: Dictionary = {}
-var strike_origin := Vector3.ZERO
-var strike_destination := Vector3.ZERO
-var strike_progress := 0.0
+var crash_point := Vector3.ZERO
+var flight_heading := 0.0
+var flight_pitch := 0.0
+var flight_bank := 0.0
+var flight_speed := 0.0
 var redeploy := 0.0
 var seat_button: Button
 var status_panel: PanelContainer
@@ -321,8 +323,6 @@ func start(which: String) -> void:
 	battery = 1
 	signal_strength = 1
 	strike_mode = true
-	strike.clear()
-	strike_progress = 0
 	redeploy = 0
 	mark_until = 0
 	yaw = 0
@@ -354,8 +354,7 @@ func start(which: String) -> void:
 		drone_skin = data.visual
 		rotor = data.hub
 		drone.transform = spawn.translated_local(Vector3(0,19,0))
-		yaw = drone.rotation.y
-		last_fix = drone.position
+		reset_airframe()
 		drone_motor = audio_node(drone,prop_clip,-13,140)
 		drone_motor.doppler_tracking = AudioStreamPlayer3D.DOPPLER_TRACKING_PHYSICS_STEP
 		camera.doppler_tracking = Camera3D.DOPPLER_TRACKING_PHYSICS_STEP
@@ -365,7 +364,7 @@ func start(which: String) -> void:
 	arena.add_child(ai)
 	ai.transform = spawn
 	if role=="recon":
-		Fleet.hull(ai,van,profile)
+		ai_turret = Fleet.hull(ai,van,profile)
 		for x in [-.91,.91]:
 			for z in [-1.51,1.51]:
 				var wheel := Fleet.tire(road,ai,signf(x),Fleet.TIRE_RADIUS,.27,false)
@@ -403,11 +402,7 @@ func add_hazard(record: Dictionary) -> void:
 	body.add_child(collider)
 	road.block(body,Vector3(0,.27,0),Vector3(1.6,.49,1.62),Color("#373d3d"))
 	road.block(body,Vector3(0,1.1,0),Vector3(1.08,.81,1.09),Color("#5a5f5a"))
-	var lamp := road.block(body,Vector3(0,1.48,0),Vector3(.44,.33,.47),Color("#ed6b38"))
-	var emission := road.mat(Color("#ed6b38"))
-	emission.emission_enabled = true
-	emission.emission = Color("#cc3514")
-	lamp.material_override = emission
+	road.block(body,Vector3(0,1.44,0),Vector3(.84,.22,.73),Color("#484a44"))
 	hazards.append({"root":body,"at":float(record.distance),"hp":1.0,"mark":false,"volley":0.0,"intercept":0.0})
 
 func dispose() -> void:
@@ -417,7 +412,6 @@ func dispose() -> void:
 	convoy.clear()
 	hazards.clear()
 	shots.clear()
-	strike.clear()
 	car = null
 	drone = null
 	rig = null
@@ -468,7 +462,7 @@ func toggle_seat() -> void:
 		pitch = .04 if seat==2 else .16
 
 func toggle_drone_mode() -> void:
-	if drone and strike.is_empty() and redeploy<=0:
+	if drone and redeploy<=0:
 		strike_mode = not strike_mode
 
 func toggle_camera() -> void:
@@ -566,14 +560,17 @@ func _physics_process(dt: float) -> void:
 		movement = (left+Vector2(axis(KEY_A,KEY_D),axis(KEY_W,KEY_S))).limit_length()
 		aim = (look_touch+Vector2(axis(KEY_LEFT,KEY_RIGHT),axis(KEY_UP,KEY_DOWN))).limit_length()
 	yaw = wrapf(yaw-aim.x*dt*1.65,-PI,PI)
-	if drone and not map_visible and strike.is_empty() and redeploy<=0:
+	if drone and not map_visible and redeploy<=0:
 		yaw = wrapf(yaw-movement.x*dt*.95,-PI,PI)
 		aim.y -= clampf(lift+axis(KEY_Q,KEY_E),-1,1)*.65
 	pitch = clampf(pitch+aim.y*dt*1.25,-.65,.75)
 	recoil *= exp(-dt*14)
 	if car:
 		drivetrain.step(dt,movement if seat!=2 else Vector2.ZERO,seat==2 or lift<0 or Input.is_physical_key_pressed(KEY_SPACE),road,wet)
-		turret.rotation.y = yaw if seat==2 else 0.0
+		if seat==2:
+			Fleet.aim_mount(turret,mog_look())
+		else:
+			Fleet.aim_mount(turret,car.global_basis.z)
 		escort_motor.pitch_scale = .76+minf(drivetrain.speed_kmh/110,.61)
 		if can_fire_mog() and (fire_tap or fire_button_held or fire_touch>=0 or Input.is_physical_key_pressed(KEY_F)):
 			fire_tap = false
@@ -596,8 +593,8 @@ func hornet_forward() -> Vector3:
 	return heading*cos(pitch)-Vector3.UP*sin(pitch)
 
 func step_drone(dt: float,move: Vector2) -> void:
-	if not strike.is_empty() or redeploy>0:
-		step_strike(dt)
+	if redeploy>0:
+		step_redeploy(dt)
 		return
 	var relay := ai.position+Vector3.UP*3.0
 	var desired := 1.0-smoothstep(280,640,drone.position.distance_to(relay))
@@ -606,30 +603,77 @@ func step_drone(dt: float,move: Vector2) -> void:
 	signal_strength = move_toward(signal_strength,desired,dt*.94)
 	if signal_strength>.34:
 		last_fix = drone.position
-	var speed := HORNET_CRUISE-clampf(move.y,-1,1)*7.0
-	var target_velocity := hornet_forward()*speed
-	if signal_strength<.13 or battery<.04:
+	var cruise := HORNET_CRUISE-clampf(move.y,-1,1)*7.0
+	if signal_strength<.13:
 		var point := last_fix.move_toward(relay,30)+Vector3.UP*11
-		target_velocity = ((point-drone.position)*1.13).limit_length(21)
-		if target_velocity.length()>2:
-			yaw = lerp_angle(yaw,atan2(target_velocity.x,target_velocity.z),dt*2.1)
-			var horizontal := Vector2(target_velocity.x,target_velocity.z).length()
-			pitch = lerpf(pitch,-atan2(target_velocity.y,horizontal),minf(1,dt*2.1))
-	if drone.position.y<4.0:
-		target_velocity.y = maxf(2.8,target_velocity.y)
+		var desired_course := point-drone.position
+		if desired_course.length()>2:
+			yaw = lerp_angle(yaw,atan2(desired_course.x,desired_course.z),dt*2.1)
+			var horizontal := Vector2(desired_course.x,desired_course.z).length()
+			pitch = clampf(-atan2(desired_course.y,horizontal),-.55,.65)
+		cruise = HORNET_CRUISE*.86
 	if drone.position.y>116:
-		target_velocity.y = minf(-2,target_velocity.y)
+		pitch = maxf(.10,pitch)
 	if battery<=0:
-		target_velocity = Vector3.DOWN*2.6
+		pitch = maxf(.19,pitch)
+		cruise = HORNET_CRUISE*.61
+
+	var heading_error := wrapf(yaw-flight_heading,-PI,PI)
+	var turn_rate := lerpf(.67,1.35,clampf(flight_speed/HORNET_CRUISE,0,1))
+	flight_heading = rotate_toward(flight_heading,yaw,dt*turn_rate)
+	flight_pitch = move_toward(flight_pitch,pitch,dt*1.42)
+	flight_bank = lerpf(flight_bank,clampf(-heading_error*.58,-.59,.59),1-exp(-4.5*dt))
+	flight_speed = move_toward(flight_speed,cruise+sin(flight_pitch)*4.0,dt*7.6)
+	drone.rotation = Vector3(flight_pitch,flight_heading,flight_bank)
+
 	var wind := Vector3(2.6+sin(time_run*.72)*1.2,.12,.47) if wet else Vector3(.31,0,.16)
-	drone.velocity = drone.velocity.move_toward(target_velocity+wind,dt*9.0)
-	drone.rotation.y = yaw
-	drone.move_and_slide()
-	battery = maxf(0,battery-dt*(.0012+target_velocity.length()*.000044))
-	drone_skin.rotation.x = lerpf(drone_skin.rotation.x,pitch,dt*5)
-	drone_skin.rotation.z = lerpf(drone_skin.rotation.z,(move.x+look_touch.x)*.16,dt*5)
+	var desired_velocity := drone.global_basis.z*flight_speed+wind
+	drone.velocity = drone.velocity.lerp(desired_velocity,1-exp(-5.4*dt))
+	var collision := drone.move_and_collide(drone.velocity*dt)
+	if collision:
+		crash(collision.get_position(),collision.get_collider() as Node)
+		return
+	battery = maxf(0,battery-dt*(.0012+flight_speed*.000044))
 	rotor.rotate_z(dt*52)
-	drone_motor.pitch_scale = .77+minf(.55,drone.velocity.length()/60)
+	drone_motor.pitch_scale = .77+minf(.55,flight_speed/60)
+
+func reset_airframe() -> void:
+	yaw = drone.rotation.y
+	pitch = 0.0
+	flight_heading = yaw
+	flight_pitch = 0.0
+	flight_bank = 0.0
+	flight_speed = HORNET_CRUISE*.72
+	drone.rotation = Vector3(0,flight_heading,0)
+	drone.velocity = drone.global_basis.z*flight_speed
+	drone_skin.rotation = Vector3.ZERO
+	last_fix = drone.position
+
+func crash(point: Vector3,hit: Node) -> void:
+	crash_point = point
+	drone.velocity = Vector3.ZERO
+	redeploy = 2.5
+	drone_motor.stop()
+	if strike_mode and is_instance_valid(hit) and hit.has_meta("hazard"):
+		var obstacle := hazards[int(hit.get_meta("hazard"))]
+		if obstacle.hp>0:
+			damage_hazard(obstacle,1.0,point)
+		else: burst(point)
+	else:
+		burst(point)
+	alert_traffic(point)
+	tell("Hornet разбился · новый вылет")
+
+func step_redeploy(dt: float) -> void:
+	redeploy = maxf(0,redeploy-dt)
+	if redeploy<=0:
+		var insertion := road.pose(primary.distance-24,-2.5)
+		drone.transform = insertion.translated_local(Vector3(0,22,0))
+		reset_airframe()
+		battery = 1.0
+		signal_strength = 1.0
+		drone_motor.play()
+		tell("Новый Hornet в воздухе")
 
 func step_traffic(dt: float) -> void:
 	var upcoming := {}
@@ -650,10 +694,14 @@ func step_traffic(dt: float) -> void:
 			upcoming.intercept = time_run+.70
 			var from := ai.position+Vector3.UP*2.0
 			var to: Vector3 = upcoming.root.position+Vector3.UP
+			Fleet.aim_mount(ai_turret,(to-from).normalized())
 			var visible := ray(from,to)
 			if visible.is_empty() or visible.collider==upcoming.root:
-				trace(from,to,AMBER)
-				play_sound(gun_clip,from,-18)
+				for barrel in Fleet.muzzles(ai_turret):
+					var muzzle: Vector3 = barrel.global_position
+					trace(muzzle,to,AMBER)
+					muzzle_flash(muzzle)
+					play_sound(gun_clip,muzzle,-20 if profile==0 else -18)
 				damage_hazard(upcoming,.34)
 	else:
 		var ahead := road.pose(primary.distance+42)
@@ -698,103 +746,68 @@ func on_collision(body: Node) -> void:
 		cooldown = .45
 		play_sound(hit_clip,car.position,-15)
 
-func damage_hazard(target: Dictionary,amount: float) -> void:
+func damage_hazard(target: Dictionary,amount: float,impact: Vector3 = Vector3.INF) -> void:
 	target.hp = maxf(0,target.hp-amount)
 	if target.hp>0:
 		return
-	var where: Vector3 = target.root.position+Vector3.UP
+	var where: Vector3 = target.root.position+Vector3.UP if impact==Vector3.INF else impact
 	burst(where)
 	target.root.queue_free()
 	alert_traffic(where)
 	tell("Участок открыт")
 
+func mog_look() -> Vector3:
+	var forward := Vector3(car.global_basis.z.x,0,car.global_basis.z.z).normalized().rotated(Vector3.UP,yaw)
+	return forward*cos(pitch)-Vector3.UP*sin(pitch)
+
 func action() -> void:
 	if not active or map_visible or cooldown>0:
 		return
 	if drone:
-		cooldown = .70
-		if not strike.is_empty() or redeploy>0:
+		if strike_mode or redeploy>0:
 			return
+		cooldown = .70
 		if signal_strength<.18:
 			tell("Связь с МОГ потеряна")
 			return
-		var s := get_viewport().get_visible_rect().size
-		var reticle := s*.5+Vector2(0,hud.cross_y*76)
-		var radius := s.y*.21
-		var best := {}
-		for target in hazards:
-			if target.hp<=0 or (target.mark and not strike_mode): continue
-			var v: Vector3 = target.root.position+Vector3.UP
-			if camera.is_position_behind(v) or drone.position.distance_to(v)>300: continue
-			var gap := reticle.distance_to(camera.unproject_position(v))
-			if gap>=radius: continue
-			var occluded := ray(drone.position,v)
-			if not occluded.is_empty() and occluded.collider!=target.root: continue
-			best = target
-			radius = gap
-		if best.is_empty():
-			tell("Наведи камеру на оранжевый маяк")
-		elif strike_mode:
-			strike = best.duplicate()
-			strike["target_index"] = hazards.find(best)
-			strike_origin = drone.position
-			strike_destination = best.root.position+Vector3.UP*1.1
-			strike_progress = 0
-			tell("Атака")
-		else:
-			best.mark = true
+		var from := camera.position
+		var hit := ray(from,from-camera.global_basis.z*260)
+		if hit.is_empty() or not hit.collider.has_meta("hazard"):
+			tell("Наведи прицел на препятствие")
+			return
+		var obstacle := hazards[int(hit.collider.get_meta("hazard"))]
+		if obstacle.hp>0 and not obstacle.mark:
+			obstacle.mark = true
 			play_sound(scan_clip,drone.position,-5)
 			tell("Метка передана экипажу")
-	elif car and seat==2:
+	elif can_fire_mog():
 		cooldown = [.12,.24,.37][profile]
 		recoil = 1.0
-		var from := camera.position
-		var target := from-camera.global_basis.z*135
-		var muzzle := turret.to_global(Vector3(0,.84,1.15))
-		var correction := ray(from,target)
-		if not correction.is_empty():
-			target = correction.position
-		var direction := (target-muzzle).normalized()
-		shots.append({"p":muzzle,"v":direction*92.0+Vector3.UP*1.25,"ttl":1.5,"strength":[.21,.34,.5][profile],"trace_at":time_run})
-		play_sound(gun_clip,muzzle,-9)
-		alert_traffic(muzzle)
+		var look := mog_look()
+		Fleet.aim_mount(turret,look)
+		for barrel in Fleet.muzzles(turret):
+			var muzzle: Vector3 = barrel.global_position
+			shots.append({"p":muzzle,"v":look*92.0+Vector3.UP*1.25,"ttl":1.5,"strength":[.125,.34,.5][profile],"trace_at":time_run})
+			muzzle_flash(muzzle)
+			play_sound(gun_clip,muzzle,-12 if profile==0 else -9)
+		alert_traffic(turret.global_position)
 
-func step_strike(dt: float) -> void:
-	if redeploy>0:
-		redeploy = maxf(0,redeploy-dt)
-		if redeploy<=0:
-			var insertion := road.pose(primary.distance-24,-2.5)
-			drone.transform = insertion.translated_local(Vector3(0,22,0))
-			drone.velocity = Vector3.ZERO
-			yaw = drone.rotation.y
-			pitch = 0.0
-			battery = 1.0
-			signal_strength = 1.0
-			drone_motor.play()
-			tell("Новый Hornet в воздухе")
-		return
-	strike_progress = minf(1,strike_progress+dt/1.65)
-	var eased := strike_progress*strike_progress
-	var point := strike_origin.lerp(strike_destination,eased)+Vector3.UP*sin(eased*PI)*2.6
-	var offset := point-drone.position
-	if offset.length_squared()>.0001:
-		yaw = atan2(offset.x,offset.z)
-		pitch = clampf(-atan2(offset.y,Vector2(offset.x,offset.z).length()),-.6,1.12)
-		drone.rotation.y = yaw
-		drone_skin.rotation.x = pitch
-	drone.position = point
-	rotor.rotate_z(dt*72)
-	drone_motor.pitch_scale = 1.08+strike_progress*.45
-	if strike_progress>=1:
-		var entry := hazards[int(strike.target_index)]
-		if entry.hp>0:
-			damage_hazard(entry,1.0)
-		else:
-			burst(strike_destination)
-		strike.clear()
-		redeploy = 2.5
-		drone_motor.stop()
-		tell("Hornet потерян · новый вылет")
+func muzzle_flash(point: Vector3) -> void:
+	var flash := MeshInstance3D.new()
+	var spark := SphereMesh.new()
+	spark.radial_segments = 6
+	spark.rings = 3
+	spark.radius = .11
+	spark.height = .22
+	flash.mesh = spark
+	var light := StandardMaterial3D.new()
+	light.albedo_color = Color("#ffe2a4")
+	light.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	flash.material_override = light
+	flash.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	arena.add_child(flash)
+	flash.position = point
+	get_tree().create_timer(.045).timeout.connect(flash.queue_free)
 
 func step_shots(dt: float) -> void:
 	for i in range(shots.size()-1,-1,-1):
@@ -901,8 +914,8 @@ func _process(dt: float) -> void:
 		look = hornet_forward()
 		drone_skin.visible = seat==1 and redeploy<=0
 		if redeploy>0.0:
-			camera.position = strike_destination+Vector3(7,4,-9)
-			camera.look_at(strike_destination)
+			camera.position = crash_point+Vector3(7,4,-9)
+			camera.look_at(crash_point)
 		elif seat==1:
 			var p := drone.position-look*6.8+Vector3.UP*1.6
 			camera.position = camera.position.lerp(p,1.0-exp(-dt*9.0))
@@ -921,7 +934,8 @@ func _process(dt: float) -> void:
 		camera.look_at(focus)
 	else:
 		camera.position = turret.global_position+Vector3.UP*.97-forward*.46 if seat==2 else car.to_global(Vector3(-.33,1.13,1.05))
-		camera.look_at(camera.position+look)
+		var direction := mog_look() if seat==2 else look
+		camera.look_at(camera.position+direction)
 	if time_run>mark_until:
 		notice.text = ""
 	update_ui()
@@ -937,9 +951,9 @@ func update_ui() -> void:
 	hud.rain_clock = time_run
 	drone_mode_button.visible = drone!=null
 	drone_mode_button.text = "Режим: удар" if strike_mode else "Режим: разведка"
-	target_button.disabled = not strike.is_empty() or redeploy>0
-	target_button.visible = active and not map_visible and (drone!=null or seat==2)
-	target_button.text = ("Удар" if strike_mode else "Метка") if drone else "Огонь"
+	target_button.disabled = redeploy>0
+	target_button.visible = active and not map_visible and ((drone!=null and not strike_mode) or (car!=null and seat==2))
+	target_button.text = "Метка" if drone else "Огонь"
 	seat_button.visible = car!=null
 	seat_button.text = "Водитель" if seat==2 else "Стрелок"
 	if not primary:
@@ -970,7 +984,7 @@ func update_ui() -> void:
 		if has_link:
 			for vehicle in convoy: truck_dots.append(vehicle.root.position)
 			for hazard in hazards:
-				if hazard.hp>0 and hazard.mark and (drone or linked_scout):
+				if hazard.hp>0 and hazard.mark and ((drone and not strike_mode) or linked_scout):
 					hazard_dots.append(hazard.root.position)
 		hud.map_points = road.points
 		hud.trucks = truck_dots
@@ -1011,7 +1025,25 @@ func smoke_test() -> void:
 		get_tree().quit(1)
 		return
 	pitch = -.28
+	yaw = .34
+	await get_tree().physics_frame
 	await get_tree().process_frame
+	var barrels := Fleet.muzzles(turret)
+	var elevation := turret.get_node("Elevation") as Node3D
+	if barrels.size()!=2 or elevation.get_child_count()<=1 or absf(elevation.rotation.x)<.10 or absf(turret.rotation.y)<.10:
+		push_error("Twin mount needs separate moving barrels, yaw and elevation")
+		get_tree().quit(1)
+		return
+	for barrel in barrels:
+		if (barrel as Node3D).global_basis.z.normalized().dot(-camera.global_basis.z)<.99:
+			push_error("MOG barrel and camera are out of alignment")
+			get_tree().quit(1)
+			return
+	action()
+	if shots.size()!=2 or shots[0].p.distance_to(shots[1].p)<.20:
+		push_error("Twin mount did not produce two independent shots")
+		get_tree().quit(1)
+		return
 	target_button.button_down.emit()
 	for i in 24: await get_tree().physics_frame
 	target_button.button_up.emit()
@@ -1064,26 +1096,39 @@ func smoke_test() -> void:
 	toggle_map()
 	left = Vector2.ZERO
 	var first := hazards[0]
-	var aim_at: Vector3 = first.root.position+Vector3.UP
-	drone.position = aim_at+Vector3(0,11,-38)
+	var aim_at: Vector3 = first.root.position+Vector3.UP*.95
+	drone.position = aim_at+Vector3(0,0,-22)
+	drone.rotation = Vector3.ZERO
+	reset_airframe()
 	signal_strength = 1
-	await get_tree().physics_frame
-	camera.position = drone.position
-	camera.look_at(aim_at)
-	hud.cross_y = 0
+	update_ui()
 	action()
-	if strike.is_empty():
-		push_error("Hornet failed to start strike")
+	if target_button.visible or redeploy>0 or first.hp!=1.0:
+		push_error("An automatic strike control is still active")
 		get_tree().quit(1)
 		return
-	for i in 116: await get_tree().physics_frame
-	if first.hp != 0 or redeploy <= 0:
-		push_error("Hornet strike failed to disable its target")
+	for i in 100:
+		await get_tree().physics_frame
+		if redeploy>0: break
+	if first.hp != 0 or redeploy <= 0 or crash_point.distance_to(aim_at)>2.5:
+		push_error("Physical Hornet collision failed to hit the obstacle")
 		get_tree().quit(1)
 		return
 	for i in 155: await get_tree().physics_frame
-	if redeploy>0 or not strike.is_empty():
+	if redeploy>0:
 		push_error("Hornet replacement failed")
+		get_tree().quit(1)
+		return
+	var approach := road.pose(road.plan.start-14,-2.0)
+	drone.transform = approach.translated_local(Vector3(0,4.5,0))
+	reset_airframe()
+	pitch = .60
+	flight_pitch = .60
+	for i in 100:
+		await get_tree().physics_frame
+		if redeploy>0: break
+	if redeploy<=0 or crash_point.y>1.0:
+		push_error("Hornet collision with road failed")
 		get_tree().quit(1)
 		return
 	for hazard in hazards:
@@ -1139,7 +1184,9 @@ func capture_model_views(folder: String) -> void:
 		var frame := Node3D.new()
 		arena.add_child(frame)
 		frame.transform = turnout.translated_local(Vector3(-2.7+i*4.6,0,0))
-		Fleet.hull(frame,i==1,i)
+		var fixture := Fleet.hull(frame,i==1,i)
+		var direction := frame.global_basis.z.rotated(Vector3.UP,-.32 if i==0 else .28)
+		Fleet.aim_mount(fixture,(direction+Vector3.UP*(.28 if i==0 else -.19)).normalized())
 		for side in [-1.0,1.0]:
 			for axle in [1.55,-1.51]:
 				var tire := Fleet.tire(road,frame,side,Fleet.TIRE_RADIUS,.27)

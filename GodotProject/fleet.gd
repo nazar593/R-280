@@ -18,8 +18,33 @@ static func hull(parent: Node3D,van: bool,profile: int) -> Node3D:
 	parent.add_child(pivot)
 	pivot.position = Vector3(0,1.16,-1.04)
 	var weapon_model: PackedScene = MOUNT_MODELS[clampi(profile,0,MOUNT_MODELS.size()-1)]
-	pivot.add_child(weapon_model.instantiate())
+	var assembly := weapon_model.instantiate() as Node3D
+	pivot.add_child(assembly)
+	var elevation := Node3D.new()
+	elevation.name = "Elevation"
+	elevation.position = Vector3(0,.84,0)
+	pivot.add_child(elevation)
+	for panel in assembly.find_children("*Elevating_*","MeshInstance3D",true,false):
+		panel.reparent(elevation,true)
+	var ports := Node3D.new()
+	ports.name = "Muzzles"
+	elevation.add_child(ports)
+	var lateral_offsets := [-.145,.145] if profile==0 else [0.0]
+	for offset in lateral_offsets:
+		var muzzle := Marker3D.new()
+		muzzle.position = Vector3(offset,0,1.165+profile*.105)
+		ports.add_child(muzzle)
 	return pivot
+
+static func aim_mount(pivot: Node3D, direction: Vector3) -> void:
+	var support := pivot.get_parent_node_3d()
+	var local := support.global_basis.inverse()*direction
+	pivot.rotation.y = atan2(local.x,local.z)
+	var elevation := pivot.get_node("Elevation") as Node3D
+	elevation.rotation.x = atan2(-local.y,Vector2(local.x,local.z).length())
+
+static func muzzles(pivot: Node3D) -> Array[Node]:
+	return pivot.get_node("Elevation/Muzzles").get_children()
 
 static func cylinder(parent: Node3D,radius: float,width: float,axis_x: float,material: Material) -> void:
 	var mesh := CylinderMesh.new()
@@ -115,4 +140,11 @@ static func aircraft(parent: Node3D) -> Dictionary:
 	sphere.radius = .33
 	collider.shape = sphere
 	root.add_child(collider)
+	for offset in [-1.04,1.04]:
+		var wing := CollisionShape3D.new()
+		var tip := SphereShape3D.new()
+		tip.radius = .16
+		wing.shape = tip
+		wing.position = Vector3(offset,0,.03)
+		root.add_child(wing)
 	return {"body":root,"visual":model,"hub":hub}
