@@ -115,7 +115,7 @@ const PLAN := {
 			"side": 1
 		},
 		{
-			"distance": 1100,
+			"distance": 1160,
 			"side": 1
 		},
 		{

@@ -34,6 +34,9 @@ jobs:
           timeout 90 godot --headless --path GodotProject -- --smoke-test 2>&1 | tee /tmp/smoke.log
           if grep -E 'SCRIPT ERROR|Parse Error' /tmp/smoke.log; then exit 1; fi
           grep -q 'role initialization smoke test complete' /tmp/smoke.log
+          timeout 90 godot --headless --path GodotProject --script res://tests/recon_scenario.gd 2>&1 | tee /tmp/recon.log
+          if grep -E '^ERROR|SCRIPT ERROR|Parse Error' /tmp/recon.log; then exit 1; fi
+          grep -q 'RECON_SCENARIO true' /tmp/recon.log
       - name: Set up Android command-line tools
         uses: android-actions/setup-android@v3
         with:
