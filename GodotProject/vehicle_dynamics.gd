@@ -38,7 +38,7 @@ func configure(car: VehicleBody3D,van: bool) -> void:
 			wheel.suspension_max_force=12000.0
 			wheel.wheel_friction_slip=3.0
 
-func step(dt: float,move: Vector2,stop: bool,terrain: Node3D) -> void:
+func step(dt: float,move: Vector2,stop: bool,terrain: Node3D, wet := false) -> void:
 	var forward := body.global_transform.basis.z.normalized()
 	var signed_speed := body.linear_velocity.dot(forward)
 	var speed := absf(signed_speed)
@@ -63,14 +63,14 @@ func step(dt: float,move: Vector2,stop: bool,terrain: Node3D) -> void:
 			load_sum+=clampf(1.0-wheel.get_skidinfo(),0.0,1.0)
 		var kind: String=terrain.surface_at(p.x,p.z)
 		var grip: float=GRIP.get(kind,1.5)
-		wheel.wheel_friction_slip=move_toward(wheel.wheel_friction_slip,grip,dt*5.0)
+		wheel.wheel_friction_slip=move_toward(wheel.wheel_friction_slip,grip*(0.71 if wet else 1.0),dt*5.0)
 		rolling+=float(RESISTANCE.get(kind,0.05))
 	suspension_load=load_sum/maxf(float(contact_count),1.0)
 	var speed_limit := 26.0 if is_van else 32.0
 	if throttle<0:
 		speed_limit=7.0
 	var torque_falloff := 1.0-smoothstep(speed_limit*0.65,speed_limit,speed)
-	var drive := 1050.0 if is_van else 1250.0
+	var drive := 2900.0 if is_van else 3150.0
 	body.engine_force=0.0 if request_brake else throttle*drive*torque_falloff
 	body.brake=brake_pressure*42.0
 	if not request_brake and absf(desired)<0.04:

@@ -1,17 +1,33 @@
-# R-280 Godot Stage 02
+# Р‑280 · Северный участок
 
-Godot 4.5.1 stable / GDScript / Compatibility renderer / Android ARM64. Open GodotProject/project.godot in the matching editor. F5 starts the prototype. No paid engine license or secrets needed for the debug APK.
+Одиночный 3D-прототип Godot 4.5.1 с трассой длиной 1,77 км. Схема участка, посёлок, съезд, путепровод, контрольные пункты и препятствия заданы в `route_data.gd`. География вымышленная. Графика использует рендерер Compatibility.
 
-Touch: drag on the lower left half to drive or adjust flight throttle/bank, right half to look/pitch. Hold the bottom center area to brake. Top buttons select camera, reset, FPS target, pause, or menu. Desktop: WASD, arrows, Space.
+В режиме МОГ можно выбрать Hilux или «Буханку», управлять подвеской на разных покрытиях, менять место водителя и стрелка, смотреть метки разведки на планшете. В режиме Hornet можно переключать FPV и внешний вид, передавать метки ИИ-экипажу и следить за связью. Трафик включает тягачи с тентом, рефрижератором и цистерной, а также отдельный грузовик. Машины учитывают дистанцию, замедляются и частично уходят на обочину. Кабина, шины и кузов получают раздельные повреждения. Фуры двигаются кинематически, тягач и прицеп обновляются отдельно.
 
-Temporary test range, generic pickup and van, fictional unarmed flying prototype and green HUD. Not a calibrated simulation or a finished game. No imported vehicle assets or actual screenshots yet. The current renderer prioritizes compatibility; the 30/60 FPS toggle sets a cap, not a measured guarantee. Camera seat changes do not implement crew combat. No multiplayer, AI, weapons, damage, terrain streaming or advanced audio.
+Сборка APK проходит в Actions без аккаунта Godot. В поле Artifacts скачай `Roadline-P280-Godot-APK` и распакуй `Roadline-P280-Godot.apk`. Отладочный APK для ARM64 подписывается временным ключом CI. Если Android не позволит обновить такую же предыдущую APK из другой сборки, старую установку потребуется удалить. Этот пакет устанавливается отдельно от Stage 03.
 
-GitHub Actions: pushes to godot-stage-01 run a headless smoke test and export a signed debug APK. Download R280-stage02-APK from the successful workflow run. The debug signing key is generated per CI run, so uninstall the previous debug build before installing a new one if Android rejects the update; this removes local app data. No Unity credentials are needed. No Play Store release is configured.
+| Действие | На телефоне | На ПК |
+|---|---|---|
+| Руль, газ / движение Hornet | Левый джойстик | WASD |
+| Обзор | Правый джойстик | Стрелки или ПКМ + движение мыши |
+| Тормоз / снижение | Нижняя зона справа | Пробел / Q |
+| Высота Hornet | Верхняя зона справа | E |
+| Действие в роли | Огонь / Метка | F |
+| Стрелок / водитель | Кнопка сверху | C |
+| Планшет / камера | Кнопки сверху | Tab / V |
+| Новый рейс | Сброс | R |
 
-The real Android installation, touch, visual fidelity and FPS must be tested on a phone.
+## Этапы и QA
 
-## Stage 02
-A fictional 1 km square procedural landscape, hills, intersecting paved roads, gravel lane, farm fields, snow and mud patches, low-poly village, instanced trees, fog and procedural sky. Roads and terrain have collision; only some trees have collision. Surface labels are informational; wheel traction calibration is Stage 03. CI attempts actual desktop screenshots as an optional artifact. Existing temporary vehicles and flight controller remain. No real device performance measurements yet.
+1. Базовая сцена и мобильное управление. Проверить одновременный обзор и управление движением.
+2. Маршрут и трафик. Снять проезд через посёлок, съезд и путепровод.
+3. Прицепы и повреждения. Проверить зоны, дым и изменение полосы.
+4. МОГ. Проверить смену мест, сцепление и движение по гравию.
+5. Hornet. Проверить скачок камеры, отрисовку пропеллера, ветер.
+6. Планшет. Проверить потерю связи, возвращение сигнала и метки.
+7. Сценарий. Доставить груз за обе роли.
+8. Звуки и эффекты. Прослушать двигатель, пролёт и тормоза. Звучание синтезируется в движке.
+9. Погода и качество. Замерить кадры на телефоне в трёх пресетах.
+10. Android. Запустить smoke-тест, собрать и проверить подпись APK, пройти рейс на устройстве.
 
-## Stage 03 (v0.3.0)
-Generic pickup and van now have distinct fictional mass, center of mass and suspension tuning; steering varies with speed, throttle and brakes ramp, reverse is interlocked while moving, per-wheel surface grip and rolling resistance are simulated. HUD displays simulated gear, surface and contact count. Gear is an indicator rather than a gearbox simulation. The existing Godot VehicleBody3D is an approximation, not a measured real vehicle model. CI checks that the pickup can move while wheels contact the ground. No phone profiling or measured handling validation yet. The current APK is signed with a new debug key per build; uninstall previous debug app if update is rejected. Artifacts: R280-stage03-APK and R280-stage03-previews.
+Для запуска на ПК импортируй `project.godot`. Тест `godot --headless --path GodotProject -- --smoke-test` проверяет движение машины, работу подвески, трафик, отдельные зоны повреждения и возгорание, полёт, связь, планшет и условие финиша. Снимки создаёт режим `--screenshots` с графическим драйвером. Запись создаёт режим `--record-gameplay` совместно с `--write-movie`.
