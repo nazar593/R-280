@@ -6,7 +6,7 @@ const Dynamics := preload("res://vehicle_dynamics.gd")
 const Fleet := preload("res://fleet.gd")
 const Freight := preload("res://freight.gd")
 const LOADOUTS := ["2 × 12,7","20 мм","23 мм"]
-const SKY := [Color("#92adbd"),Color("#b39b85"),Color("#26374c")]
+const SKY := [Color("#a8bdc9"),Color("#c8a58b"),Color("#26374c")]
 const RETICLE := Color("#87f2a0")
 const AMBER := Color("#eab970")
 var road: Terrain
@@ -56,6 +56,13 @@ var daylight: Button
 var quality_choice: Button
 var camera_button: Button
 var target_button: Button
+var drone_mode_button: Button
+var strike_mode := true
+var strike: Dictionary = {}
+var strike_origin := Vector3.ZERO
+var strike_destination := Vector3.ZERO
+var strike_progress := 0.0
+var redeploy := 0.0
 var seat_button: Button
 var status_panel: PanelContainer
 var hud: Hud
@@ -184,6 +191,9 @@ func apply_weather() -> void:
 	sunlight.shadow_enabled = quality>0
 	sunlight.directional_shadow_max_distance = 115 if quality>1 else 64
 	camera.far = [530,720,980][quality]
+	road.set_wet(wet)
+	if hud:
+		hud.wet = wet
 	if weather:
 		weather.text = "Дождь" if wet else "Сухо"
 		daylight.text = ["День","Закат","Ночь"][time_choice]
@@ -238,7 +248,7 @@ func make_ui() -> void:
 	choices.add_child(title)
 	choices.add_child(label("Северный участок · Сопровождение",16))
 	button(choices,"МОГ  ·  начать рейс",start.bind("escort"))
-	button(choices,"Hornet  ·  начать разведку",start.bind("recon"))
+	button(choices,"Hornet  ·  ударный вылет",start.bind("recon"))
 	choice = button(choices,"Машина · Hilux",func():
 		van = not van
 		choice.text = "Машина · Буханка" if van else "Машина · Hilux")
@@ -266,6 +276,7 @@ func make_ui() -> void:
 	notice.add_theme_color_override("font_outline_color",Color("#1c2328"))
 	notice.add_theme_constant_override("outline_size",5)
 	top.add_child(notice)
+	drone_mode_button = button(top,"Режим: удар",toggle_drone_mode)
 	seat_button = button(top,"Стрелок",toggle_seat)
 	camera_button = button(top,"Камера",toggle_camera)
 	button(top,"Сброс",reset_role)
@@ -299,6 +310,10 @@ func start(which: String) -> void:
 	time_run = 0
 	battery = 1
 	signal_strength = 1
+	strike_mode = true
+	strike.clear()
+	strike_progress = 0
+	redeploy = 0
 	mark_until = 0
 	yaw = 0
 	pitch = .16
@@ -343,9 +358,8 @@ func start(which: String) -> void:
 		Fleet.hull(road,ai,van,profile)
 		for x in [-.91,.91]:
 			for z in [-1.51,1.51]:
-				var wheel := Fleet.WHEEL.instantiate() as Node3D
-				ai.add_child(wheel)
-				wheel.position = Vector3(x,.36,z)
+				var wheel := Fleet.tire(road,ai,signf(x),Fleet.TIRE_RADIUS,.27,false)
+				wheel.position = Vector3(signf(x)*Fleet.TRACK_HALF,Fleet.TIRE_RADIUS,z)
 	else:
 		ai.add_child(Fleet.HORNET.instantiate())
 	menu.hide()
@@ -393,6 +407,7 @@ func dispose() -> void:
 	convoy.clear()
 	hazards.clear()
 	shots.clear()
+	strike.clear()
 	car = null
 	drone = null
 	rig = null
@@ -440,6 +455,10 @@ func toggle_seat() -> void:
 		yaw = 0
 		pitch = .04 if seat==2 else .16
 
+func toggle_drone_mode() -> void:
+	if drone and strike.is_empty() and redeploy<=0:
+		strike_mode = not strike_mode
+
 func toggle_camera() -> void:
 	if active and rig:
 		seat = 1 if seat==0 else 0
@@ -455,6 +474,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_V: toggle_camera()
 			KEY_C: toggle_seat()
 			KEY_F: action()
+			KEY_G: toggle_drone_mode()
 			KEY_R: reset_role()
 			KEY_ESCAPE:
 				if map_visible: toggle_map()
@@ -527,6 +547,9 @@ func ray(start_at: Vector3,end_at: Vector3) -> Dictionary:
 	return get_world_3d().direct_space_state.intersect_ray(query)
 
 func step_drone(dt: float,move: Vector2) -> void:
+	if not strike.is_empty() or redeploy>0:
+		step_strike(dt)
+		return
 	var relay := ai.position+Vector3.UP*3.0
 	var desired := 1.0-smoothstep(280,640,drone.position.distance_to(relay))
 	if not ray(drone.position,relay).is_empty():
@@ -639,6 +662,8 @@ func action() -> void:
 		return
 	if drone:
 		cooldown = .70
+		if not strike.is_empty() or redeploy>0:
+			return
 		if signal_strength<.18:
 			tell("Связь с МОГ потеряна")
 			return
@@ -647,7 +672,7 @@ func action() -> void:
 		var radius := s.y*.21
 		var best := {}
 		for target in hazards:
-			if target.hp<=0 or target.mark: continue
+			if target.hp<=0 or (target.mark and not strike_mode): continue
 			var v: Vector3 = target.root.position+Vector3.UP
 			if camera.is_position_behind(v) or drone.position.distance_to(v)>300: continue
 			var gap := reticle.distance_to(camera.unproject_position(v))
@@ -658,6 +683,13 @@ func action() -> void:
 			radius = gap
 		if best.is_empty():
 			tell("Наведи камеру на оранжевый маяк")
+		elif strike_mode:
+			strike = best.duplicate()
+			strike["target_index"] = hazards.find(best)
+			strike_origin = drone.position
+			strike_destination = best.root.position+Vector3.UP*1.1
+			strike_progress = 0
+			tell("Атака")
 		else:
 			best.mark = true
 			play_sound(scan_clip,drone.position,-5)
@@ -675,6 +707,43 @@ func action() -> void:
 		shots.append({"p":muzzle,"v":direction*92.0+Vector3.UP*1.25,"ttl":1.5,"strength":[.21,.34,.5][profile],"trace_at":time_run})
 		play_sound(gun_clip,muzzle,-9)
 		alert_traffic(muzzle)
+
+func step_strike(dt: float) -> void:
+	if redeploy>0:
+		redeploy = maxf(0,redeploy-dt)
+		if redeploy<=0:
+			var insertion := road.pose(primary.distance-24,-2.5)
+			drone.transform = insertion.translated_local(Vector3(0,22,0))
+			drone.velocity = Vector3.ZERO
+			yaw = drone.rotation.y
+			pitch = .16
+			battery = 1.0
+			signal_strength = 1.0
+			drone_motor.play()
+			tell("Новый Hornet в воздухе")
+		return
+	strike_progress = minf(1,strike_progress+dt/1.65)
+	var eased := strike_progress*strike_progress
+	var point := strike_origin.lerp(strike_destination,eased)+Vector3.UP*sin(eased*PI)*2.6
+	var offset := point-drone.position
+	if offset.length_squared()>.0001:
+		yaw = atan2(offset.x,offset.z)
+		pitch = clampf(-atan2(offset.y,Vector2(offset.x,offset.z).length()),-.6,1.12)
+		drone.rotation.y = yaw
+		drone_skin.rotation.x = pitch
+	drone.position = point
+	rotor.rotate_z(dt*72)
+	drone_motor.pitch_scale = 1.08+strike_progress*.45
+	if strike_progress>=1:
+		var entry := hazards[int(strike.target_index)]
+		if entry.hp>0:
+			damage_hazard(entry,1.0)
+		else:
+			burst(strike_destination)
+		strike.clear()
+		redeploy = 2.5
+		drone_motor.stop()
+		tell("Hornet потерян · новый вылет")
 
 func step_shots(dt: float) -> void:
 	for i in range(shots.size()-1,-1,-1):
@@ -733,18 +802,34 @@ func trace(from: Vector3,to: Vector3,color: Color) -> void:
 func burst(point: Vector3) -> void:
 	var p := OmniLight3D.new()
 	p.light_color = Color("#ffaf66")
-	p.light_energy = 3.1
-	p.omni_range = 10
+	p.light_energy = 5.2
+	p.omni_range = 18
 	arena.add_child(p)
 	p.position = point
 	get_tree().create_timer(.095).timeout.connect(p.queue_free)
 	play_sound(hit_clip,point,-9)
 	var smoke: CPUParticles3D = primary.emitter(arena,point,false)
 	smoke.one_shot = true
-	smoke.amount = 13
+	smoke.amount = 24 if quality>0 else 14
+	smoke.lifetime = 3.1
+	smoke.initial_velocity_max = 8.2
+	smoke.scale_amount_max = 2.05
 	smoke.explosiveness = 1
 	smoke.emitting = true
 	smoke.finished.connect(smoke.queue_free)
+	var sparks: CPUParticles3D = primary.emitter(arena,point,true)
+	sparks.one_shot = true
+	sparks.amount = 26 if quality>0 else 13
+	sparks.lifetime = .62
+	sparks.explosiveness = 1
+	sparks.spread = 155
+	sparks.gravity = Vector3.DOWN*12
+	sparks.initial_velocity_min = 5
+	sparks.initial_velocity_max = 15
+	sparks.scale_amount_min = .12
+	sparks.scale_amount_max = .39
+	sparks.emitting = true
+	sparks.finished.connect(sparks.queue_free)
 
 func outcome(success: bool) -> void:
 	active = false
@@ -762,8 +847,11 @@ func _process(dt: float) -> void:
 	var forward := rig.global_basis.z.rotated(Vector3.UP,yaw if car else 0.0)
 	var look := (forward*cos(pitch)-Vector3.UP*sin(pitch-recoil*.07)).normalized()
 	if drone:
-		drone_skin.visible = seat==1
-		if seat==1:
+		drone_skin.visible = seat==1 and redeploy<=0
+		if redeploy>0.0:
+			camera.position = strike_destination+Vector3(7,4,-9)
+			camera.look_at(strike_destination)
+		elif seat==1:
 			var p := drone.position-forward*6.8+Vector3.UP*2.35
 			camera.position = camera.position.lerp(p,1.0-exp(-dt*9.0))
 			camera.look_at(drone.position)
@@ -772,7 +860,8 @@ func _process(dt: float) -> void:
 			camera.look_at(camera.position+look)
 	elif seat==0:
 		var focus := car.position+Vector3.UP*1.15
-		var wanted := focus-forward*7.75+Vector3.UP*(2.23+pitch*2.4)
+		var camera_side := Vector3.UP.cross(forward).normalized()
+		var wanted := focus-forward*7.25+camera_side*1.33+Vector3.UP*(1.83+pitch*2.4)
 		var occlusion := ray(focus,wanted)
 		if not occlusion.is_empty():
 			wanted = occlusion.position+occlusion.normal*.23
@@ -792,8 +881,13 @@ func update_ui() -> void:
 	hud.cross_y = clampf((pitch-.16)*1.26,-.92,.92)
 	hud.tablet = map_visible
 	hud.role = role
+	hud.attack = strike_mode and drone!=null and redeploy<=0
+	hud.rain_clock = time_run
+	drone_mode_button.visible = drone!=null
+	drone_mode_button.text = "Режим: удар" if strike_mode else "Режим: разведка"
+	target_button.disabled = not strike.is_empty() or redeploy>0
 	target_button.visible = active and not map_visible and (drone!=null or seat==2)
-	target_button.text = "Метка" if drone else "Огонь"
+	target_button.text = ("Удар" if strike_mode else "Метка") if drone else "Огонь"
 	seat_button.visible = car!=null
 	seat_button.text = "Водитель" if seat==2 else "Стрелок"
 	if not primary:
@@ -813,7 +907,10 @@ func update_ui() -> void:
 	if not active:
 		task.text = "Груз доставлен" if not primary.lost() else "Рейс сорван"
 	else:
-		task.text = "Возврат к точке связи" if drone and signal_strength<.13 else next_place
+		if redeploy>0:
+			task.text = "Новый вылет через %.1f с" % redeploy
+		else:
+			task.text = "Возврат к точке связи" if drone and signal_strength<.13 else next_place
 	if map_visible:
 		var truck_dots := PackedVector3Array()
 		var hazard_dots := PackedVector3Array()
@@ -843,6 +940,16 @@ func smoke_test() -> void:
 		push_error("Vehicle dynamics or traffic failed")
 		get_tree().quit(1)
 		return
+	for wheel in drivetrain.wheels:
+		if absf(wheel.position.x)<1.10 or wheel.get_node_or_null("VisibleTire")==null:
+			push_error("Pickup wheel %s misplaced: %s" % [wheel.name,wheel.position])
+			get_tree().quit(1)
+			return
+	for freight in convoy:
+		if freight.tires.size()!=(4 if freight.rigid else 10):
+			push_error("Tractor or trailer wheel count failed")
+			get_tree().quit(1)
+			return
 	toggle_seat()
 	var part: Freight = convoy[1]
 	part.damage("tire",.61)
@@ -872,8 +979,33 @@ func smoke_test() -> void:
 		push_error("Disconnected tablet leaked telemetry")
 		get_tree().quit(1)
 		return
+	toggle_map()
+	left = Vector2.ZERO
+	var first := hazards[0]
+	var aim_at: Vector3 = first.root.position+Vector3.UP
+	drone.position = aim_at+Vector3(0,11,-38)
+	signal_strength = 1
+	await get_tree().physics_frame
+	camera.position = drone.position
+	camera.look_at(aim_at)
+	hud.cross_y = 0
+	action()
+	if strike.is_empty():
+		push_error("Hornet failed to start strike")
+		get_tree().quit(1)
+		return
+	for i in 116: await get_tree().physics_frame
+	if first.hp != 0 or redeploy <= 0:
+		push_error("Hornet strike failed to disable its target")
+		get_tree().quit(1)
+		return
+	for i in 155: await get_tree().physics_frame
+	if redeploy>0 or not strike.is_empty():
+		push_error("Hornet replacement failed")
+		get_tree().quit(1)
+		return
 	for hazard in hazards:
-		damage_hazard(hazard,1)
+		if hazard.hp>0: damage_hazard(hazard,1)
 	primary.distance = road.plan.finish+1
 	await get_tree().physics_frame
 	await get_tree().process_frame
@@ -899,6 +1031,8 @@ func capture() -> void:
 	left=Vector2.UP
 	await get_tree().create_timer(2.0).timeout
 	left=Vector2.ZERO
+	yaw = .81
+	await get_tree().create_timer(.48).timeout
 	await save_frame(folder,"02-mog.png")
 	start("recon")
 	drone.position=road.at(road.plan.start+105)+Vector3.UP*23

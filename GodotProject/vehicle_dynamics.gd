@@ -23,13 +23,13 @@ func configure(car: VehicleBody3D,van: bool) -> void:
 	body.center_of_mass_mode=RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
 	body.center_of_mass=Vector3(0,-0.10 if van else -0.18,0.08)
 	body.linear_damp=0.08
-	body.angular_damp=0.65
+	body.angular_damp=0.80
 	body.can_sleep=false
 	for child in body.get_children():
 		if child is VehicleWheel3D:
 			var wheel := child as VehicleWheel3D
 			wheels.append(wheel)
-			wheel.wheel_radius=0.43
+			wheel.wheel_radius=0.405
 			wheel.wheel_rest_length=0.30 if van else 0.27
 			wheel.suspension_travel=0.25
 			wheel.suspension_stiffness=30.0 if van else 27.0
@@ -51,6 +51,14 @@ func step(dt: float,move: Vector2,stop: bool,terrain: Node3D, wet := false) -> v
 	var steer_limit := lerpf(0.52,0.16,smoothstep(3.0,24.0,speed))
 	steering=move_toward(steering,-move.x*steer_limit,dt*1.15)
 	body.steering=steering
+	for axle in [0,2]:
+		var left := wheels[axle]
+		var right := wheels[axle+1]
+		if left.is_in_contact() and right.is_in_contact():
+			var travel := (left.position.y-right.position.y)*body.mass*5.75
+			var up := body.global_basis.y
+			body.apply_force(-up*travel,left.global_position-body.global_position)
+			body.apply_force(up*travel,right.global_position-body.global_position)
 	surface=terrain.surface_at(body.position.x,body.position.z)
 	contact_count=0
 	var rolling := 0.0

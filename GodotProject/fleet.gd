@@ -1,7 +1,8 @@
 extends RefCounted
 
 const PICKUP := preload("res://art/pickup.glb")
-const WHEEL := preload("res://art/wheel.glb")
+const TRACK_HALF := 1.16
+const TIRE_RADIUS := .405
 const HORNET := preload("res://art/hornet.glb")
 const OLIVE := Color("#646b4d")
 const DARK := Color("#242b2a")
@@ -36,6 +37,43 @@ static func hull(terrain: Node3D,parent: Node3D,van: bool,profile: int) -> Node3
 		terrain.block(pivot,Vector3(x,.84,.58),Vector3(.075,.075,1.13+profile*.22),DARK)
 	return pivot
 
+static func cylinder(parent: Node3D,radius: float,width: float,axis_x: float,material: Material) -> void:
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = radius
+	mesh.bottom_radius = radius
+	mesh.height = width
+	mesh.radial_segments = 24
+	mesh.rings = 1
+	var surface := MeshInstance3D.new()
+	surface.mesh = mesh
+	surface.material_override = material
+	parent.add_child(surface)
+	surface.position.x = axis_x
+	surface.rotation.z = PI*.5
+
+static func tire(terrain: Node3D,parent: Node3D,side: float,radius: float,width: float,detailed := true) -> Node3D:
+	var wheel := Node3D.new()
+	wheel.name = "VisibleTire"
+	parent.add_child(wheel)
+	var rubber: Material = terrain.mat(Color("#222527"))
+	var face: Material = terrain.mat(Color("#353839"))
+	var steel: Material = terrain.mat(Color("#7c8589"))
+	var cap: Material = terrain.mat(Color("#464c51"))
+	if not detailed:
+		cylinder(wheel,radius,width,0,rubber)
+		cylinder(wheel,radius*.56,.045,side*width*.49,steel)
+		return wheel
+	cylinder(wheel,radius*.974,width*.72,0,rubber)
+	cylinder(wheel,radius,width*.54,0,rubber)
+	cylinder(wheel,radius*.923,width*.96,0,face)
+	cylinder(wheel,radius*.62,.027,side*width*.50,steel)
+	cylinder(wheel,radius*.34,.048,side*(width*.50+.012),cap)
+	for i in 5:
+		var angle := TAU*i/5.0
+		var center := Vector3(side*(width*.50+.03),cos(angle)*radius*.46,sin(angle)*radius*.46)
+		terrain.block(wheel,center,Vector3(.035,.046,.046),Color("#343a3e"))
+	return wheel
+
 static func player(terrain: Node3D,parent: Node3D,spawn: Transform3D,van: bool,profile: int) -> Dictionary:
 	var car := VehicleBody3D.new()
 	parent.add_child(car)
@@ -54,13 +92,14 @@ static func player(terrain: Node3D,parent: Node3D,spawn: Transform3D,van: bool,p
 	var gun := hull(terrain,body,van,profile)
 	for i in range(4):
 		var wheel := VehicleWheel3D.new()
-		car.add_child(wheel)
-		wheel.position = Vector3(-.92 if i%2==0 else .92,-.26,1.49 if i<2 else -1.49)
+		var side := -1.0 if i%2==0 else 1.0
+		wheel.name = ["FrontLeft","FrontRight","RearLeft","RearRight"][i]
+		wheel.position = Vector3(side*TRACK_HALF,-.26,1.55 if i<2 else -1.51)
 		wheel.use_as_steering = i<2
 		wheel.use_as_traction = true
-		var visual := WHEEL.instantiate() as Node3D
-		wheel.add_child(visual)
-		visual.scale = Vector3.ONE*1.20
+		# Godot registers the suspension connection at tree entry.
+		car.add_child(wheel)
+		tire(terrain,wheel,side,TIRE_RADIUS,.27)
 	return {"body":car,"gun":gun}
 
 static func aircraft(parent: Node3D) -> Dictionary:

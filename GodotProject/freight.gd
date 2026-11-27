@@ -39,7 +39,7 @@ func build(terrain: Node3D,parent: Node3D,at: float,dir: float,kind: int,id: int
 	parent.add_child(root)
 	root.set_meta("freight",self)
 	root.set_meta("zone","cab")
-	var cab: Color = [Color("#d0cfc1"),Color("#a25d44"),Color("#537786")][id%3]
+	var cab: Color = [Color("#ddd8c7"),Color("#a25d44"),Color("#537786")][id%3]
 	road.block(root,Vector3(0,.7,0),Vector3(1.96,.36,5.78),DARK)
 	box_shape(root,Vector3(0,1.75,1.4),Vector3(2.43,2.43,2.3))
 	road.block(root,Vector3(0,1.75,1.4),Vector3(2.43,2.43,2.3),cab)
@@ -49,6 +49,9 @@ func build(terrain: Node3D,parent: Node3D,at: float,dir: float,kind: int,id: int
 	for side in [-1,1]:
 		road.block(root,Vector3(side*1.228,2.39,1.54),Vector3(.045,.60,1.36),GLASS)
 		road.block(root,Vector3(side*1.39,2.42,2.36),Vector3(.16,.39,.17),DARK)
+		road.block(root,Vector3(side*1.17,.80,.43),Vector3(.18,.21,.57),Color("#666e70"))
+		road.block(root,Vector3(side*1.23,1.42,1.50),Vector3(.049,.075,.38),DARK)
+		road.block(root,Vector3(side*1.258,.79,-1.84),Vector3(.075,.52,.11),DARK)
 		road.block(root,Vector3(side*.95,1.13,2.589),Vector3(.37,.22,.10),Color("#e6d4a3"))
 	var carrier := root
 	if not rigid:
@@ -91,7 +94,7 @@ func build(terrain: Node3D,parent: Node3D,at: float,dir: float,kind: int,id: int
 	for axle in [1.65,-1.30]:
 		add_axle(root,axle)
 	if rear:
-		for axle in [-6.42,-7.62]:
+		for axle in [-5.34,-6.59,-7.84]:
 			add_axle(rear,axle)
 	transform_at()
 	var fuel := Vector3(0,2.6,z)
@@ -99,17 +102,12 @@ func build(terrain: Node3D,parent: Node3D,at: float,dir: float,kind: int,id: int
 	flames = emitter(cargo,fuel,true)
 
 func add_axle(parent: Node3D,z: float) -> void:
-	for x in [-1.08,1.08]:
+	for side in [-1.0,1.0]:
 		var axle := Node3D.new()
 		parent.add_child(axle)
-		axle.position = Vector3(x,.47,z)
-		var tire := wheel_mesh(.47,.29,RUBBER)
-		axle.add_child(tire)
-		tire.rotation.z = PI*.5
-		var hub := wheel_mesh(.248,.33,Color("#a1a8a1"))
-		axle.add_child(hub)
-		hub.rotation.z = PI*.5
-		tires.append(axle)
+		axle.position = Vector3(side*1.225,.47,z)
+		var tire := preload("res://fleet.gd").tire(road,axle,side,.47,.32,false)
+		tires.append(tire)
 
 func wheel_mesh(radius: float,width: float,color: Color) -> MeshInstance3D:
 	var mesh := CylinderMesh.new()

@@ -19,9 +19,17 @@ var escort := Vector3.ZERO
 var aircraft := Vector3.ZERO
 var map_info := ""
 var map_progress := ""
+var wet := false
+var attack := false
+var rain_clock := 0.0
 
 func _draw() -> void:
 	var mid := size*.5
+	if wet and controls_visible:
+		var streak := Color("#c9deed35")
+		for i in 34:
+			var p := Vector2(fposmod(i*163.72+rain_clock*185,size.x),fposmod(i*83.7+rain_clock*720,size.y))
+			draw_line(p,p+Vector2(-8,26),streak,1.1,true)
 	if tablet:
 		draw_tablet()
 		return
@@ -30,7 +38,7 @@ func _draw() -> void:
 		draw_line(mid-Vector2(size.x*.34,0),mid-Vector2(56,0),GREEN,2,true)
 		draw_line(mid+Vector2(56,0),mid+Vector2(size.x*.34,0),GREEN,2,true)
 		draw_arc(p,19,0,TAU,40,GREEN,1.8,true)
-		crosshair(p,9,GREEN)
+		crosshair(p,9,GOLD if attack else GREEN)
 	if gun_reticle:
 		draw_arc(mid,14,0,TAU,32,GOLD,1.7,true)
 		crosshair(mid,6,GOLD)

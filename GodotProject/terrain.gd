@@ -8,6 +8,8 @@ var length := 0.0
 var points := PackedVector3Array()
 var arc_lengths := PackedFloat32Array()
 var ground_noise := FastNoiseLite.new()
+var asphalt_material: StandardMaterial3D
+var verge_materials: Array[StandardMaterial3D] = []
 var materials := {}
 
 func build() -> void:
@@ -28,9 +30,9 @@ func build() -> void:
 	ground_noise.seed = 280
 	ground_noise.frequency = .012
 	ground()
-	ribbon("Асфальт", -4.15,4.15,0.0, Color("#3f4344"),true)
-	ribbon("Гравий слева",-5.5,-4.15,-0.03,Color("#877e63"),true)
-	ribbon("Гравий справа",4.15,5.5,-0.03,Color("#877e63"),true)
+	ribbon("Асфальт", -4.15,4.15,0.0, Color("#a5a5a0"),true)
+	ribbon("Гравий слева",-5.5,-4.15,-0.03,Color("#ae9c78"),true)
+	ribbon("Гравий справа",4.15,5.5,-0.03,Color("#ae9c78"),true)
 	for side in [-1.0,1.0]:
 		ribbon("Краевая линия",side*3.88-0.06,side*3.88+0.06,0.014,Color("#ddd6bd"),false)
 	roadside()
@@ -136,7 +138,8 @@ func ground() -> void:
 				var p := Vector3(x+offset.x,0,z+offset.y)
 				p.y = height_sample(p.x,p.z)
 				var shade := 0.5+ground_noise.get_noise_2d(p.x+45,p.z+20)*0.5
-				st.set_color(Color("#73744e").lerp(Color("#535941"),shade))
+				st.set_uv(Vector2(p.x,p.z)*.073)
+				st.set_color(Color("#c3c2a1").lerp(Color("#87927b"),shade))
 				st.add_vertex(p)
 	st.index()
 	st.generate_normals()
@@ -144,6 +147,8 @@ func ground() -> void:
 	land.mesh = st.commit()
 	var m := StandardMaterial3D.new()
 	m.vertex_color_use_as_albedo = true
+	m.albedo_texture = preload("res://art/grass.jpg")
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
 	m.roughness = 1.0
 	land.material_override = m
 	add_child(land)
@@ -161,13 +166,22 @@ func ribbon(label: String,left: float,right: float,lift: float,color: Color,coll
 		var p3 := b*Vector3(left,lift,0)
 		var p4 := b*Vector3(right,lift,0)
 		for p in [p1,p2,p3,p2,p4,p3]:
+			st.set_uv(Vector2(p.x,p.z)*.285)
 			st.add_vertex(p)
 	st.index()
 	st.generate_normals()
 	var piece := MeshInstance3D.new()
 	piece.name = label
 	piece.mesh = st.commit()
-	piece.material_override = mat(color)
+	var surface := mat(color).duplicate() as StandardMaterial3D
+	if label=="Асфальт":
+		asphalt_material = surface
+		surface.albedo_texture = preload("res://art/asphalt.jpg")
+	elif label.begins_with("Гравий"):
+		verge_materials.append(surface)
+		surface.albedo_texture = preload("res://art/gravel.jpg")
+	surface.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	piece.material_override = surface
 	piece.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(piece)
 	if collide:
@@ -187,6 +201,8 @@ func batch(mesh: Mesh, transforms: Array[Transform3D], color: Color) -> void:
 
 func roadside() -> void:
 	var marks: Array[Transform3D] = []
+	var posts: Array[Transform3D] = []
+	var reflectors: Array[Transform3D] = []
 	var trunks: Array[Transform3D] = []
 	var crowns: Array[Transform3D] = []
 	var rng := RandomNumberGenerator.new()
@@ -200,6 +216,12 @@ func roadside() -> void:
 			p.y = terrain_height(p.x,p.z)
 			trunks.append(Transform3D(Basis.from_scale(Vector3(0.26,h*0.60,0.26)),p+Vector3.UP*(h*0.28)))
 			crowns.append(Transform3D(Basis.from_scale(Vector3(h*0.52,h*0.76,h*0.63)),p+Vector3.UP*(h*0.68)))
+		if d%4==3 and road.origin.y<.7:
+			for side in [-1,1]:
+				var p := at(d,side*5.81)
+				p.y = terrain_height(p.x,p.z)
+				posts.append(Transform3D(road.basis,p+Vector3.UP*.39))
+				reflectors.append(Transform3D(road.basis,p+Vector3.UP*.74))
 		if road.origin.y>1.6:
 			var p := road.origin
 			if d%3 == 0:
@@ -209,6 +231,12 @@ func roadside() -> void:
 	var dash := BoxMesh.new()
 	dash.size = Vector3(0.13,0.015,5.25)
 	batch(dash,marks,Color("#dfd8be"))
+	var bollard := BoxMesh.new()
+	bollard.size = Vector3(.13,.78,.12)
+	batch(bollard,posts,Color("#e5dfce"))
+	var reflector := BoxMesh.new()
+	reflector.size = Vector3(.14,.11,.13)
+	batch(reflector,reflectors,Color("#5f3635"))
 	batch(BoxMesh.new(),trunks,Color("#504434"))
 	var crown := SphereMesh.new()
 	crown.radial_segments = 7
@@ -234,3 +262,11 @@ func roadside() -> void:
 					solid(t*Vector3(x,2.55,0),Vector3(0.23,5.1,0.23),Color("#666e6c"),t.basis)
 				solid(t*Vector3(0,5.15,0),Vector3(10.4,0.20,0.22),Color("#777d75"),t.basis)
 				solid(t*Vector3(0,4.95,0),Vector3(3.9,0.73,0.13),Color("#435b56"),t.basis)
+
+func set_wet(wet: bool) -> void:
+	if asphalt_material:
+		asphalt_material.albedo_color = Color("#686d72") if wet else Color("#a5a5a0")
+		asphalt_material.roughness = .34 if wet else .91
+		asphalt_material.metallic_specular = .7 if wet else .38
+	for material in verge_materials:
+		material.albedo_color = Color("#82785e") if wet else Color("#ae9c78")
